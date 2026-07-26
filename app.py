@@ -572,11 +572,11 @@ with tab1:
     st.warning("Veriler çekilemedi. Lütfen bağlantıyı kontrol edin.")
 
 # ==============================================================================
-# SEKME 4: TEKNİK & GÖSTERGELER (GENİŞLETİLMİŞ MASAÜSTÜ TAKVİM DÜZENİ)
+# SEKME 4: TEKNİK & GÖSTERGELER (ÖZEL BAŞLIK BARI İLE TAKVİM)
 # ==============================================================================
 with tab4:
-  # 1. İKİ KOLONLU KUSURSUZ YAPI (SAĞ KOLON GENİŞLETİLDİ)
-  col_left, col_right = st.columns([1, 1.8])
+  # 1. İKİ KOLONLU KUSURSUZ YAPI
+  col_left, col_right = st.columns([1, 1.45])
 
   # --- SOL KOLON: TÜREV GÖSTERGELERİ + MAKRO KARTLAR + HABER SENTIMENT ---
   with col_left:
@@ -688,33 +688,44 @@ with tab4:
     """
     st.markdown(table_news, unsafe_allow_html=True)
 
-  # --- SAĞ KOLON: TAM TABLO / MASAÜSTÜ MODUNDA BAŞLIKLI CANLI TAKVİM ---
+  # --- SAĞ KOLON: ÖZEL HİZALANMIŞ HTML BAŞLIK BARI VE CANLI TAKVİM ---
   with col_right:
     st.markdown(
         "<h4 style='font-size:0.95rem; margin-top:0px; margin-bottom:6px;'"
-        " font-weight:600; color:#F0B90B;'>📅 Canlı Makro Ekonomik Takvim"
-        " (Açıklanan / Beklenen / Önceki Detaylı)</h4>",
+        " font-weight:600; color:#F0B90B;'>📅 Canlı Makro Ekonomik Takvim</h4>",
         unsafe_allow_html=True,
     )
 
-    # WIDGET GENİŞLİĞİ ARTIRILARAK 'AÇIKLANAN / BEKLENEN / ÖNCEKİ' BAŞLIKLARI AKTİF EDİLDİ
+    # ÖZEL SÜTUN BAŞLIK BARI VE TRADINGVIEW WIDGET'I
     tv_calendar_code = """
-        <div class="tradingview-widget-container" style="height:750px;width:100%">
-          <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
-          {
-          "colorTheme": "dark",
-          "isTransparent": true,
-          "width": "100%",
-          "height": "750",
-          "locale": "tr",
-          "importanceFilter": "0",
-          "currencyFilter": "USD,EUR,JPY,CNY"
-        }
-          </script>
+        <div style="width:100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+            <!-- HİZALANMIŞ ÖZEL SÜTUN BAŞLIK BARI -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background-color: #262B3E; padding: 6px 14px; border-radius: 6px 6px 0 0; border: 1px solid #333A4E; font-size: 0.78rem; font-weight: 700; color: #94A3B8; margin-bottom: 2px;">
+                <div style="flex: 2; text-align: left; color: #F0B90B;">Etkinlik / Makro Veri</div>
+                <div style="flex: 1.2; display: flex; justify-content: space-between; text-align: right; padding-right: 10px;">
+                    <span style="color: #10B981; width: 33%;">Güncel</span>
+                    <span style="color: #F0B90B; width: 33%;">Tahmin</span>
+                    <span style="color: #94A3B8; width: 33%;">Önceki</span>
+                </div>
+            </div>
+            <!-- CANLI TAKVİM WIDGET CONTAINER -->
+            <div class="tradingview-widget-container" style="height:700px;width:100%">
+              <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
+              <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
+              {
+              "colorTheme": "dark",
+              "isTransparent": true,
+              "width": "100%",
+              "height": "700",
+              "locale": "tr",
+              "importanceFilter": "0",
+              "currencyFilter": "USD,EUR,JPY,CNY"
+            }
+              </script>
+            </div>
         </div>
         """
-    components.html(tv_calendar_code, height=755)
+    components.html(tv_calendar_code, height=735)
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
