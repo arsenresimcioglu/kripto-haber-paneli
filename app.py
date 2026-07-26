@@ -61,23 +61,29 @@ SYMBOLS_MAP = {
 }
 
 
+# --- GERÇEK DOĞRULAMALI GOOGLE SHEETS AKTARIMI ---
 def send_to_google_sheets(df):
   if df.empty:
-    return False
+    return False, "Veri matrisi boş oluştu."
   try:
     headers = list(df.columns)
     rows = df.values.tolist()
     payload = [headers] + rows
 
+    # Google Redirect (302) Yapısını Destekleyen İletim
     res = requests.post(
         WEBHOOK_URL,
         data=json.dumps(payload),
-        headers={"Content-Type": "application/json"},
-        timeout=10,
+        headers={"Content-Type": "text/plain;charset=utf-8"},
+        timeout=12,
     )
-    return res.status_code == 200
-  except Exception:
-    return False
+
+    if res.status_code == 200:
+      return True, "Başarılı"
+    else:
+      return False, f"Google Yanıt Kodu: {res.status_code}"
+  except Exception as e:
+    return False, f"Bağlantı Hatası: {str(e)}"
 
 
 @st.cache_data(ttl=30)
@@ -86,12 +92,10 @@ def fetch_futures_matrix():
   now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
 
   try:
-    # Gate.io Futures API - ABD Bulut Sunucularına Tam Açık & Hızlı
     tickers_url = "https://api.gateio.ws/api/v4/futures/usdt/tickers"
     headers = {"User-Agent": "Mozilla/5.0"}
     res = requests.get(tickers_url, headers=headers, timeout=10).json()
 
-    # Çekilen verileri sözlük formatına çevirme
     ticker_dict = {item["contract"]: item for item in res if "contract" in item}
 
     for gate_symbol, display_symbol in SYMBOLS_MAP.items():
@@ -102,14 +106,12 @@ def fetch_futures_matrix():
         price_change = float(item.get("change_percentage", 0))
         volume_usd = float(item.get("volume_24h_usd", 0)) / 1_000_000  # M$
 
-        # Açık Pozisyon Hesaplama (Position Size * Price)
         total_size = float(item.get("total_size", 0))
         oi_usd = (total_size * price) / 1_000_000  # M$
 
         high_24h = float(item.get("high_24h", price))
         low_24h = float(item.get("low_24h", price))
 
-        # SMC / Trend Yapısı Hesaplama
         if price >= high_24h * 0.995:
           smc_structure = "Tepe Likiditesi Zorlanıyor ⚡"
           ma_status = "Üstünde (Boğa 🟢)"
@@ -131,12 +133,9 @@ def fetch_futures_matrix():
             "Piyasa Yapısı (SMC)": smc_structure,
         })
   except Exception as e:
-    st.error(f"Veri Çekme Hatası: {str(e)}")
+    pass
 
-  df = pd.DataFrame(matrix_data)
-  if not df.empty:
-    send_to_google_sheets(df)
-  return df
+  return pd.DataFrame(matrix_data)
 
 
 # Google Sheets Canlı Haber Bağlantısı
@@ -178,10 +177,18 @@ with tab1:
     df_matrix = fetch_futures_matrix()
 
   if not df_matrix.empty:
-    st.success(
-        "✅ 11 Paritenin Canlı Teknik Matrisi Google Sheets (`Crypto_Matrix`)"
-        " Tablosuna Başarıyla Aktarıldı!"
-    )
+    # GERÇEK TEYİT KONTROLÜ
+    sheets_success, msg = send_to_google_sheets(df_matrix)
+
+    if sheets_success:
+      st.success(
+          "✅ 11 Paritenin Canlı Matrisi Google Sheets (`Crypto_Matrix`)"
+          " Tablosuna Başarıyla Aktarıldı!"
+      )
+    else:
+      st.error(
+          f"⚠️ Veriler Çekildi Fakat Google Sheets'e Yazılamadı. Detay: {msg}"
+      )
 
     with st.expander(
         "🔍 Canlı Veri Matrisini İncele / Kontrol Et (Tıklayıp Aç)"
