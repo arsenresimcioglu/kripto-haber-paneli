@@ -572,59 +572,42 @@ with tab1:
     st.warning("Veriler çekilemedi. Lütfen bağlantıyı kontrol edin.")
 
 # ==============================================================================
-# SEKME 4: TEKNİK & GÖSTERGELER (CANLI TRADINGVIEW TAKVİMLİ YENİ YAPI)
+# SEKME 4: TEKNİK & GÖSTERGELER (MİNİMAL VE KUSURSUZ PANEL DÜZENİ)
 # ==============================================================================
 with tab4:
-  # 1. EN ÜST BAR: BAŞLIK VE PARİTE SEÇİMİ
-  col_head1, col_head2 = st.columns([2.2, 1])
-  with col_head1:
-    st.markdown(
-        "<h3 style='margin:0; padding:0; font-size:1.15rem; color:#F8FAFC;'>⚡"
-        " Canlı Türev & Ekonomik Takvim Masası</h3>",
-        unsafe_allow_html=True,
-    )
-  with col_head2:
-    selected_display = st.selectbox(
-        "Parite Seçin:",
-        options=[meta["display"] for meta in SYMBOLS_MAP.values()],
-        label_visibility="collapsed",
-    )
+  # 1. İKİ KOLONLU KUSURSUZ YAPI
+  col_left, col_right = st.columns([1, 1.4])
 
-  selected_key = [
-      k for k, v in SYMBOLS_MAP.items() if v["display"] == selected_display
-  ][0]
-  coinank_symbol = SYMBOLS_MAP[selected_key]["coinank"]
-
-  # 2. İKİ KOLONLU KUSURSUZ YAPI (SOL: MODÜLER KUTULAR | SAĞ: TRADINGVIEW CANLI KESİNTİSİZ TAKVİM)
-  col_left, col_right = st.columns([1, 1.45])
-
-  # --- SOL KOLON: TÜM KUTULARIN ALT ALTA DİZİLİMİ ---
+  # --- SOL KOLON: TÜREV GÖSTERGELERİ + MAKRO KARTLAR + HABER SENTIMENT ---
   with col_left:
-    # A) LİKİDASYON HARİTASI HIZLI ERİŞİM
-    st.markdown(
-        f"""
-        <div style="background-color:#1E222D; border-radius:8px; padding:12px; border:1px solid #2A2E39; margin-bottom:8px;">
-            <h4 style="margin-top:0; margin-bottom:4px; color:#F0B90B; font-size:0.9rem;">💧 {selected_display} Liquidation Map</h4>
-            <div style="display:flex; gap:8px; margin-top:6px;">
-                <a href="https://coinank.com/tr/chart/derivatives/liq-map/binance/{coinank_symbol}/1d" target="_blank" style="background-color:#F0B90B; color:#000; padding:6px 12px; border-radius:4px; font-weight:700; text-decoration:none; font-size:0.78rem;">🔗 CoinAnk Liq Map ↗</a>
-                <a href="https://www.coinglass.com/pro/futures/LiquidationHeatMap" target="_blank" style="background-color:#3B82F6; color:#fff; padding:6px 12px; border-radius:4px; font-weight:700; text-decoration:none; font-size:0.78rem;">🔥 Coinglass Heatmap ↗</a>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # A) CANLI TÜREV GÖSTERGELERİ VEYA PARİTE SEÇİMİ
+    c_head1, c_head2 = st.columns([1.5, 1])
+    with c_head1:
+      st.markdown(
+          "<h4 style='margin:0; margin-top:4px; color:#3B82F6;"
+          " font-size:0.95rem;'>📊 Canlı Türev Göstergeleri</h4>",
+          unsafe_allow_html=True,
+      )
+    with c_head2:
+      selected_display = st.selectbox(
+          "Parite Seçin:",
+          options=[meta["display"] for meta in SYMBOLS_MAP.values()],
+          label_visibility="collapsed",
+      )
 
-    # B) CANLI TÜREV GÖSTERGELERİ
+    selected_key = [
+        k for k, v in SYMBOLS_MAP.items() if v["display"] == selected_display
+    ][0]
     d_data = fetch_real_derivatives_data(selected_key)
+
     st.markdown(
         f"""
         <div style="background-color:#1E222D; border-radius:8px; padding:12px; border:1px solid #2A2E39; margin-bottom:8px;">
-            <h4 style="margin-top:0; margin-bottom:6px; color:#3B82F6; font-size:0.9rem;">📊 {selected_display} Canlı Türev Göstergeleri</h4>
             <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
                 <span>Fonlama Oranı (Funding):</span> <b style="color:#F0B90B;">{d_data['funding']}</b>
             </div>
             <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
-                <span>Top Trader Long / Short:</span> <b style="color:#10B981;">{d_data['long_pct']}</b> / <b style="color:#EF4444;">{d_data['short_pct']}</b>
+                <span>Top Trader Long / Short ({selected_display}):</span> <b style="color:#10B981;">{d_data['long_pct']}</b> / <b style="color:#EF4444;">{d_data['short_pct']}</b>
             </div>
             <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:0.8rem;">
                 <span>Genel Pozisyon Eğilimi:</span> <b>{d_data['bias']}</b>
@@ -634,7 +617,7 @@ with tab4:
         unsafe_allow_html=True,
     )
 
-    # C) MAKRO DUYGU KARTLARI
+    # B) MAKRO DUYGU KARTLARI
     fng_val, fng_class, btc_dom = fetch_macro_indicators()
     m_col1, m_col2 = st.columns(2)
     with m_col1:
@@ -658,9 +641,9 @@ with tab4:
           unsafe_allow_html=True,
       )
 
-    # D) HABER & EKONOMİ RADAR SENTIMENT MATRİSİ
+    # C) HABER & EKONOMİ RADAR SENTIMENT MATRİSİ
     st.markdown(
-        "<h4 style='font-size:0.85rem; margin-top:8px; margin-bottom:4px;'"
+        "<h4 style='font-size:0.88rem; margin-top:8px; margin-bottom:4px;'"
         " font-weight:600;'>📰 Haber & Ekonomi Radar Sentiment Matrisi</h4>",
         unsafe_allow_html=True,
     )
@@ -705,7 +688,7 @@ with tab4:
     """
     st.markdown(table_news, unsafe_allow_html=True)
 
-  # --- SAĞ KOLON: TRADINGVIEW KESİNTİSİZ 100% CANLI EKONOMİK TAKVİM WIDGET'I ---
+  # --- SAĞ KOLON: TRADINGVIEW CANLI VE KUSURSUZ EKONOMİK TAKVİM ---
   with col_right:
     st.markdown(
         "<h4 style='font-size:0.95rem; margin-top:0px; margin-bottom:6px;'"
@@ -714,16 +697,15 @@ with tab4:
         unsafe_allow_html=True,
     )
 
-    # TRADINGVIEW CANLI VE KESİNTİSİZ ÇALIŞAN EKONOMİK TAKVİM WIDGET'I
     tv_calendar_code = """
-        <div class="tradingview-widget-container" style="height:540px;width:100%">
+        <div class="tradingview-widget-container" style="height:480px;width:100%">
           <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
           {
           "colorTheme": "dark",
           "isTransparent": true,
           "width": "100%",
-          "height": "540",
+          "height": "480",
           "locale": "tr",
           "importanceFilter": "0",
           "currencyFilter": "USD,EUR,GBP,JPY,CNY"
@@ -731,7 +713,7 @@ with tab4:
           </script>
         </div>
         """
-    components.html(tv_calendar_code, height=545)
+    components.html(tv_calendar_code, height=485)
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
