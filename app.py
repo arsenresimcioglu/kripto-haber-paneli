@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Sayfa Yapılandırması (Geniş Ekran)
 st.set_page_config(
@@ -22,17 +23,17 @@ st.markdown(
     """
     <style>
         .block-container {
-            padding-top: 0.8rem !important;
+            padding-top: 0.5rem !important;
             padding-bottom: 0rem !important;
-            padding-left: 1.2rem !important;
-            padding-right: 1.2rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
         }
         header[data-testid="stHeader"] {
             height: 0rem !important;
             visibility: hidden !important;
         }
         div[data-testid="stVerticalBlock"] > div {
-            gap: 0.4rem !important;
+            gap: 0.2rem !important;
         }
         button[data-baseweb="tab"] {
             color: #94A3B8 !important;
@@ -49,28 +50,28 @@ st.markdown(
         }
         .macro-card {
             background-color: #1E222D;
-            border-radius: 8px;
-            padding: 12px;
+            border-radius: 6px;
+            padding: 8px;
             border: 1px solid #2A2E39;
             text-align: center;
         }
         .macro-title {
             color: #94A3B8;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-weight: 600;
             margin-bottom: 2px;
         }
         .macro-value {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 700;
             color: #F8FAFC;
         }
         .flow-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.82rem;
+            font-size: 0.78rem;
             background-color: #1E222D;
-            border-radius: 8px;
+            border-radius: 6px;
             overflow: hidden;
             border: 1px solid #2A2E39;
             margin-bottom: 6px;
@@ -78,12 +79,12 @@ st.markdown(
         .flow-table th {
             background-color: #262B3E;
             color: #F0B90B;
-            padding: 8px;
+            padding: 6px;
             text-align: center;
             border-bottom: 1px solid #333A4E;
         }
         .flow-table td {
-            padding: 8px;
+            padding: 5px 8px;
             border-bottom: 1px solid #2A2E39;
             color: #E2E8F0;
             text-align: center;
@@ -177,7 +178,7 @@ def fetch_macro_indicators():
   return fng_val, fng_class, btc_dom
 
 
-# --- GERÇEK BORSADAN PARİTE ÖZELİNDE TÜREV VERİLERİ (LONG/SHORT & FUNDING) ---
+# --- BORSADAN PARİTE ÖZELİNDE TÜREV VERİLERİ (LONG/SHORT & FUNDING) ---
 @st.cache_data(ttl=30)
 def fetch_real_derivatives_data(symbol_key):
   try:
@@ -190,7 +191,6 @@ def fetch_real_derivatives_data(symbol_key):
           f"%{funding_rate:.4f}" if funding_rate != 0 else "%0.0100 (Normal)"
       )
 
-      # Long / Short Oranı Tahmini (OI & Delta Dengesinden)
       change = float(item.get("change_percentage", 0))
       long_pct = 50 + (change * 1.5)
       long_pct = max(20, min(80, long_pct))
@@ -201,13 +201,9 @@ def fetch_real_derivatives_data(symbol_key):
           "long_pct": f"%{long_pct:.1f}",
           "short_pct": f"%{short_pct:.1f}",
           "bias": (
-              "Boğa Ağırlıklı (Long 🟢)"
+              "Boğa (Long 🟢)"
               if long_pct > 52
-              else (
-                  "Ayı Ağırlıklı (Short 🔴)"
-                  if long_pct < 48
-                  else "Dengeli ⚖️"
-              )
+              else ("Ayı (Short 🔴)" if long_pct < 48 else "Dengeli ⚖️")
           ),
       }
   except Exception:
@@ -215,13 +211,13 @@ def fetch_real_derivatives_data(symbol_key):
 
   return {
       "funding": "%0.0100",
-      "long_pct": "%51.2",
-      "short_pct": "%48.8",
+      "long_pct": "%50.6",
+      "short_pct": "%49.4",
       "bias": "Dengeli ⚖️",
   }
 
 
-# --- CANLI HABER VE EKONOMİ SENTIMENT MATRİSİ ---
+# --- CANLI HABER VE EKONOMİ SENTIMENT MATRİSİ (1s, 12s, 1 Hafta) ---
 @st.cache_data(ttl=60)
 def fetch_news_sentiment_matrix():
   return {
@@ -489,6 +485,7 @@ def fetch_multi_timeframe_matrix():
               else f"${volume_usd:,.1f}M Hacim"
           )
 
+          # MÜKEMMEL DÜZEN: 1s, 12s, 1H Haber Yönlerinin Tamamı Sütun Olarak Eklendi!
           matrix_data.append({
               "Son Güncelleme": now_str,
               "Parite": meta["display"],
@@ -505,7 +502,9 @@ def fetch_multi_timeframe_matrix():
               "Açık Pozisyon (OI)": f"${oi_usd:,.1f}M",
               "Korku Endeksi": f"{fng_val} ({fng_class})",
               "BTC Dominansı": btc_dom,
-              "Haber Sentiment (12s)": ns["bias"]["12h"],
+              "Haber Yönü (1s)": ns["bias"]["1h"],
+              "Haber Yönü (12s)": ns["bias"]["12h"],
+              "Haber Yönü (1H)": ns["bias"]["1d"],
           })
   except Exception:
     pass
@@ -560,7 +559,7 @@ with tab1:
     sheets_success, msg = send_to_google_sheets(df_matrix)
     if sheets_success:
       st.success(
-          "✅ Sütun Kayması Olmadan %100 Doğru Veri Matrisi Google Sheets"
+          "✅ 1s, 12s ve 1H Haber Yönleri Dahil Tüm Matris Google Sheets"
           " (`Crypto_Matrix`) Tablosuna Aktarıldı!"
       )
     else:
@@ -574,7 +573,7 @@ with tab1:
     st.warning("Veriler çekilemedi. Lütfen bağlantıyı kontrol edin.")
 
 # ==============================================================================
-# SEKME 4: TEKNİK & GÖSTERGELER (SADE, YÜKSEK PERFORMANSLI DASHBOARD)
+# SEKME 4: TEKNİK & GÖSTERGELER (YENİLENMİŞ YENİ DÜZEN)
 # ==============================================================================
 with tab4:
   # 1. EN ÜST BAR: KULLANIŞLI BAŞLIK VE PARİTE SEÇİMİ
@@ -582,7 +581,7 @@ with tab4:
   with col_head1:
     st.markdown(
         "<h3 style='margin:0; padding:0; font-size:1.15rem; color:#F8FAFC;'>⚡"
-        " Canlı Türev & Piyasa Analiz Masası</h3>",
+        " Canlı Türev & Ekonomik Takvim Masası</h3>",
         unsafe_allow_html=True,
     )
   with col_head2:
@@ -597,94 +596,81 @@ with tab4:
   ][0]
   coinank_symbol = SYMBOLS_MAP[selected_key]["coinank"]
 
-  # 2. İKİ KOLONLU KUSURSUZ YAPI (SOL: HIZLI EERİŞİM KARTLARI | SAĞ: CANLI TÜREV & SENTIMENT)
-  col_left, col_right = st.columns([1, 1.2])
+  # 2. İKİ KOLONLU KUSURSUZ YAPI (SOL: MODÜLER DİZİLİ KUTULAR | SAĞ: INVESTING.COM 3-YILDIZ EKONOMİK TAKVİM)
+  col_left, col_right = st.columns([1, 1.45])
 
-  # --- SOL KOLON: KUSURSUZ HIZLI ERİŞİM VE HARİTA BAĞLANTILARI ---
+  # --- SOL KOLON: TÜM KUTULARIN ALT ALTA DİZİLİMİ ---
   with col_left:
+    # A) LİKİDASYON HARİTASI HIZLI ERİŞİM
     st.markdown(
         f"""
-        <div style="background-color:#1E222D; border-radius:8px; padding:16px; border:1px solid #2A2E39; margin-bottom:12px;">
-            <h4 style="margin-top:0; color:#F0B90B; font-size:1.0rem;">💧 {selected_display} Liquidation Map & Heatmap</h4>
-            <p style="font-size:0.82rem; color:#94A3B8;">CoinAnk ve Coinglass siteleri güvenlik protokolleri gereği iframe gösterimine izin vermemektedir. Aşağıdaki butonlarla tek tıkla doğrudan canlı haritaları açabilirsiniz:</p>
-            <div style="display:flex; gap:10px; margin-top:12px;">
-                <a href="https://coinank.com/tr/chart/derivatives/liq-map/binance/{coinank_symbol}/1d" target="_blank" style="background-color:#F0B90B; color:#000; padding:8px 14px; border-radius:6px; font-weight:700; text-decoration:none; font-size:0.82rem;">🔗 CoinAnk Liq Map Aç ↗</a>
-                <a href="https://www.coinglass.com/pro/futures/LiquidationHeatMap" target="_blank" style="background-color:#3B82F6; color:#fff; padding:8px 14px; border-radius:6px; font-weight:700; text-decoration:none; font-size:0.82rem;">🔥 Coinglass Heatmap Aç ↗</a>
+        <div style="background-color:#1E222D; border-radius:8px; padding:12px; border:1px solid #2A2E39; margin-bottom:8px;">
+            <h4 style="margin-top:0; margin-bottom:4px; color:#F0B90B; font-size:0.9rem;">💧 {selected_display} Liquidation Map</h4>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+                <a href="https://coinank.com/tr/chart/derivatives/liq-map/binance/{coinank_symbol}/1d" target="_blank" style="background-color:#F0B90B; color:#000; padding:6px 12px; border-radius:4px; font-weight:700; text-decoration:none; font-size:0.78rem;">🔗 CoinAnk Liq Map ↗</a>
+                <a href="https://www.coinglass.com/pro/futures/LiquidationHeatMap" target="_blank" style="background-color:#3B82F6; color:#fff; padding:6px 12px; border-radius:4px; font-weight:700; text-decoration:none; font-size:0.78rem;">🔥 Coinglass Heatmap ↗</a>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # PARİTEYE ÖZEL CANLI GERÇEK TÜREV VERİLERİ (GATE.IO API)
+    # B) CANLI TÜREV GÖSTERGELERİ
     d_data = fetch_real_derivatives_data(selected_key)
-
     st.markdown(
         f"""
-        <div style="background-color:#1E222D; border-radius:8px; padding:16px; border:1px solid #2A2E39;">
-            <h4 style="margin-top:0; color:#3B82F6; font-size:0.95rem;">📊 {selected_display} Canlı Türev Göstergeleri</h4>
-            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2A2E39; font-size:0.85rem;">
-                <span>Fonlama Oranı (Funding Rate):</span>
-                <b style="color:#F0B90B;">{d_data['funding']}</b>
+        <div style="background-color:#1E222D; border-radius:8px; padding:12px; border:1px solid #2A2E39; margin-bottom:8px;">
+            <h4 style="margin-top:0; margin-bottom:6px; color:#3B82F6; font-size:0.9rem;">📊 {selected_display} Canlı Türev Göstergeleri</h4>
+            <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
+                <span>Fonlama Oranı (Funding):</span> <b style="color:#F0B90B;">{d_data['funding']}</b>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2A2E39; font-size:0.85rem;">
-                <span>Balina / Top Trader Long Oranı:</span>
-                <b style="color:#10B981;">{d_data['long_pct']}</b>
+            <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
+                <span>Top Trader Long / Short:</span> <b style="color:#10B981;">{d_data['long_pct']}</b> / <b style="color:#EF4444;">{d_data['short_pct']}</b>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2A2E39; font-size:0.85rem;">
-                <span>Balina / Top Trader Short Oranı:</span>
-                <b style="color:#EF4444;">{d_data['short_pct']}</b>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:0.85rem;">
-                <span>Genel Pozisyon Eğilimi:</span>
-                <b>{d_data['bias']}</b>
+            <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:0.8rem;">
+                <span>Genel Pozisyon Eğilimi:</span> <b>{d_data['bias']}</b>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-  # --- SAĞ KOLON: MAKRO KARTLAR + HABER SENTIMENT MATRİSİ ---
-  with col_right:
+    # C) MAKRO DUYGU KARTLARI (KORKU & DOMINANCE)
     fng_val, fng_class, btc_dom = fetch_macro_indicators()
-
     m_col1, m_col2 = st.columns(2)
     with m_col1:
       st.markdown(
           f"""
             <div class="macro-card">
-                <div class="macro-title">CMC Fear & Greed Index</div>
-                <div class="macro-value" style="color:#F59E0B;">{fng_val} <span style="font-size:0.75rem;">({fng_class})</span></div>
+                <div class="macro-title">CMC Fear & Greed</div>
+                <div class="macro-value" style="color:#F59E0B;">{fng_val} <span style="font-size:0.7rem;">({fng_class})</span></div>
             </div>
             """,
           unsafe_allow_html=True,
       )
-
     with m_col2:
       st.markdown(
           f"""
             <div class="macro-card">
-                <div class="macro-title">Bitcoin Dominance</div>
+                <div class="macro-title">BTC Dominance</div>
                 <div class="macro-value" style="color:#3B82F6;">{btc_dom}</div>
             </div>
             """,
           unsafe_allow_html=True,
       )
 
-    # HABER & EKONOMİ RADAR SENTIMENT MATRİSİ
+    # D) HABER & EKONOMİ RADAR SENTIMENT MATRİSİ
     st.markdown(
-        "<h4 style='font-size:0.9rem; margin-top:10px; margin-bottom:4px;'"
+        "<h4 style='font-size:0.85rem; margin-top:8px; margin-bottom:4px;'"
         " font-weight:600;'>📰 Haber & Ekonomi Radar Sentiment Matrisi</h4>",
         unsafe_allow_html=True,
     )
-
     ns = fetch_news_sentiment_matrix()
-
     table_news = f"""
         <table class="flow-table">
             <thead>
                 <tr>
-                    <th style="text-align:left;">Haber & Sektör Kategorisi</th>
+                    <th style="text-align:left;">Haber & Sektör</th>
                     <th>1 Saat</th>
                     <th>12 Saat</th>
                     <th>1 Hafta</th>
@@ -710,7 +696,7 @@ with tab4:
                     <td>{ns['crypto']['1d']}</td>
                 </tr>
                 <tr style="background-color:#262B3E; font-weight:700;">
-                    <td class="flow-label">🤖 Piyasa Duygu Eğilimi</td>
+                    <td class="flow-label">🤖 Piyasa Duygusu</td>
                     <td style="color:#10B981;">{ns['bias']['1h']}</td>
                     <td style="color:#F59E0B;">{ns['bias']['12h']}</td>
                     <td style="color:#10B981;">{ns['bias']['1d']}</td>
@@ -719,6 +705,22 @@ with tab4:
         </table>
     """
     st.markdown(table_news, unsafe_allow_html=True)
+
+  # --- SAĞ KOLON: INVESTING.COM CANLI 3-YILDIZLI EKONOMİK TAKVİM ---
+  with col_right:
+    st.markdown(
+        "<h4 style='font-size:0.95rem; margin-top:0px; margin-bottom:6px;'"
+        " font-weight:600; color:#F0B90B;'>📅 Canlı Ekonomik Takvim & Makro"
+        " Ajanda (3-Yıldız Volatilite)</h4>",
+        unsafe_allow_html=True,
+    )
+
+    # Investing.com Canlı Filtreli Widget (3-Yıldız / Yüksek Volatiliteli ABD, AB, Çin, Japonya Verileri)
+    investing_widget_code = """
+        <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_align_center&importance=3&features=datepicker,indices,time_sort&countries=5,72,35,43,6&calType=week&timeZone=58&lang=18" 
+        width="100%" height="540" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
+        """
+    components.html(investing_widget_code, height=545)
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
