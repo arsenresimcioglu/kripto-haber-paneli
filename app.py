@@ -217,27 +217,27 @@ def fetch_real_derivatives_data(symbol_key):
   }
 
 
-# --- CANLI HABER VE EKONOMİ SENTIMENT MATRİSİ ---
+# --- CANLI HABER VE EKONOMİ SENTIMENT MATRİSİ (4s, 12s, 1D GÜRÜLTÜSÜZ PENCERE) ---
 @st.cache_data(ttl=60)
 def fetch_news_sentiment_matrix():
   return {
       "eco": {
-          "1h": "Dengeli Veri ⚖️",
+          "4h": "Dengeli Veri ⚖️",
           "12h": "Şahin FED Söylemi 🔴",
           "1d": "Nötr-Pozitif 🟢",
       },
       "pol": {
-          "1h": "Sakin ⚪",
+          "4h": "Sakin ⚪",
           "12h": "SEC Regülasyonu 🔴",
           "1d": "Jeopolitik Risk 🔴",
       },
       "crypto": {
-          "1h": "ETF Girişi VAR 🔥",
+          "4h": "ETF Girişi VAR 🔥",
           "12h": "Balina Toplama 🟢",
           "1d": "Pozitif Trend 🚀",
       },
       "bias": {
-          "1h": "Bullish 🟢",
+          "4h": "Bullish 🟢",
           "12h": "Nötr-Bearish ⚖️",
           "1d": "Bullish 🟢",
       },
@@ -267,16 +267,25 @@ def send_to_google_sheets(df):
     return False, f"Bağlantı Hatası: {str(e)}"
 
 
-# --- GELİŞMİŞ İNDİKATÖR, FIBONACCI (TP/SL) VE SMC HESAPLAMA MOTORU ---
+# --- GELİŞMİŞ İNDİKATÖR, BOLLINGER SQUEEZE, AYRILMIŞ FIBO VE SMC MOTORU ---
 def calculate_advanced_indicators(klines_data, current_price):
+  default_fibo = {
+      "sl": "$0.00",
+      "g_pocket": "$0.00",
+      "tp1": "$0.00",
+      "tp2": "$0.00",
+      "str": "Fibo Hesaplanamadı",
+  }
   if not klines_data or len(klines_data) < 10:
     return (
         "Sıkışma Bölgesi ⚖️",
         "Normal Mum",
-        "Fibo Hesaplanamadı",
+        default_fibo,
         "Nötr POC",
         "Dengeli Delta",
         "Nötr",
+        "Normal Volatilite",
+        "$0.00",
     )
 
   try:
@@ -308,6 +317,7 @@ def calculate_advanced_indicators(klines_data, current_price):
     body = abs(last_c - last_o)
     rng = last_h - last_l if last_h > last_l else 1e-9
 
+    # 1. MUM FORMASYONLARI
     if (
         last_c > last_o
         and prev_c < prev_o
@@ -331,6 +341,7 @@ def calculate_advanced_indicators(klines_data, current_price):
     else:
       candle_pattern = "Normal Mum Gövdesi"
 
+    # 2. AUTO-FIBONACCI (AYRILMIŞ YAPISAL DEĞERLER)
     swing_high, swing_low = np.max(highs), np.min(lows)
     fibo_range = (
         swing_high - swing_low if swing_high > swing_low else current_price * 0.01
@@ -344,8 +355,19 @@ def calculate_advanced_indicators(klines_data, current_price):
         if current_price >= 1
         else f"${val:.4f}"
     )
-    fibo_levels_str = f"SL/Dip: {fmt(swing_low)} | 0.618: {fmt(fibo_0618)} | TP1: {fmt(swing_high)} | TP2: {fmt(fibo_ext_1272)}"
 
+    fibo_dict = {
+        "sl": fmt(swing_low),
+        "g_pocket": fmt(fibo_0618),
+        "tp1": fmt(swing_high),
+        "tp2": fmt(fibo_ext_1272),
+        "str": (
+            f"SL: {fmt(swing_low)} | 0.618: {fmt(fibo_0618)} | TP1:"
+            f" {fmt(swing_high)}"
+        ),
+    }
+
+    # 3. SMC VE AKILLI PARA YAPISI
     high_max, low_min = np.max(highs[:-1]), np.min(lows[:-1])
     bullish_fvg = (lows[-1] > highs[-3]) if len(lows) >= 3 else False
     bearish_fvg = (highs[-1] < lows[-3]) if len(highs) >= 3 else False
@@ -365,7 +387,9 @@ def calculate_advanced_indicators(klines_data, current_price):
     else:
       smc_structure = "Sıkışma / Akümülasyon Bölgesi ⚖️"
 
+    # 4. VOLUME PROFILE (POC)
     price_min, price_max = np.min(lows), np.max(highs)
+    poc_price_str = "$0.00"
     if price_max > price_min:
       bins = np.linspace(price_min, price_max, 10)
       digitized = np.digitize(closes, bins)
@@ -374,14 +398,16 @@ def calculate_advanced_indicators(klines_data, current_price):
       ]
       poc_bin_idx = np.argmax(vol_per_bin)
       poc_price = (bins[poc_bin_idx] + bins[poc_bin_idx + 1]) / 2
+      poc_price_str = fmt(poc_price)
       poc_status = (
-          f"POC Üstünde Destek ({fmt(poc_price)})"
+          f"POC Üstünde Destek ({poc_price_str})"
           if current_price >= poc_price
-          else f"POC Altında Direnç ({fmt(poc_price)})"
+          else f"POC Altında Direnç ({poc_price_str})"
       )
     else:
       poc_status = "Nötr POC"
 
+    # 5. CVD DELTA
     ranges = highs - lows
     ranges[ranges == 0] = 1e-9
     deltas = volumes * ((closes - lows) - (highs - closes)) / ranges
@@ -395,6 +421,7 @@ def calculate_advanced_indicators(klines_data, current_price):
     else:
       cvd_status = "Dengeli Delta ⚖️"
 
+    # 6. STOKASTİK MOMENTUM
     l14, h14 = np.min(lows[-14:]), np.max(highs[-14:])
     if h14 > l14:
       stoch_k = 100 * (closes[-1] - l14) / (h14 - l14)
@@ -410,23 +437,42 @@ def calculate_advanced_indicators(klines_data, current_price):
     else:
       stoch_status = "Nötr"
 
+    # 7. BOLLINGER BAND SQUEEZE (OYNAKLIK SIKIŞMA TESPİTİ)
+    if len(closes) >= 20:
+      sma20 = np.mean(closes[-20:])
+      std20 = np.std(closes[-20:])
+      upper_bb = sma20 + (2 * std20)
+      lower_bb = sma20 - (2 * std20)
+      bb_width = (upper_bb - lower_bb) / sma20 if sma20 > 0 else 0
+      bb_status = (
+          f"Bant Sıkışması (Squeeze %{bb_width*100:.1f} ⚠️)"
+          if bb_width < 0.025
+          else f"Genişleyen Volatilite (%{bb_width*100:.1f} 🔥)"
+      )
+    else:
+      bb_status = "Normal Volatilite"
+
     return (
         smc_structure,
         candle_pattern,
-        fibo_levels_str,
+        fibo_dict,
         poc_status,
         cvd_status,
         stoch_status,
+        bb_status,
+        poc_price_str,
     )
 
   except Exception:
     return (
         "Sıkışma Bölgesi ⚖️",
         "Normal Mum",
-        "Fibo Hesaplanamadı",
+        default_fibo,
         "Nötr POC",
         "Dengeli Delta",
         "Nötr",
+        "Normal Volatilite",
+        "$0.00",
     )
 
 
@@ -466,17 +512,41 @@ def fetch_multi_timeframe_matrix():
           try:
             k_url = f"https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract={gate_symbol}&interval={tf_gate}&limit=30"
             k_res = requests.get(k_url, headers=headers, timeout=5).json()
-            smc, candle, fibo, poc, cvd, stoch = calculate_advanced_indicators(
-                k_res, price
-            )
+            (
+                smc,
+                candle,
+                fibo,
+                poc,
+                cvd,
+                stoch,
+                bb_sq,
+                poc_val,
+            ) = calculate_advanced_indicators(k_res, price)
           except Exception:
-            smc, candle, fibo, poc, cvd, stoch = (
+            (
+                smc,
+                candle,
+                fibo,
+                poc,
+                cvd,
+                stoch,
+                bb_sq,
+                poc_val,
+            ) = (
                 "Sıkışma Bölgesi ⚖️",
                 "Normal Mum",
-                "Fibo Nötr",
+                {
+                    "sl": "$0.00",
+                    "g_pocket": "$0.00",
+                    "tp1": "$0.00",
+                    "tp2": "$0.00",
+                    "str": "Nötr",
+                },
                 "Nötr POC",
                 "Dengeli Delta",
                 "Nötr",
+                "Normal Volatilite",
+                "$0.00",
             )
 
           vol_or_contract = (
@@ -485,6 +555,7 @@ def fetch_multi_timeframe_matrix():
               else f"${volume_usd:,.1f}M Hacim"
           )
 
+          # KUSURSUZ SHEETS MATRİSİ: AYRILMIŞ FIBO KOLONLARI VE 4S SENTIMENT
           matrix_data.append({
               "Son Güncelleme": now_str,
               "Parite": meta["display"],
@@ -493,17 +564,21 @@ def fetch_multi_timeframe_matrix():
               "24s Değişim": f"{'▲' if price_change >= 0 else '▼'} %{price_change:.2f}",
               "SMC & Yapı Analizi": smc,
               "Mum Formasyonu": candle,
-              "Auto-Fibo (TP / SL)": fibo,
               "Volume Profile (POC)": poc,
               "CVD / Order Flow Delta": cvd,
+              "Bollinger Volatilite (BB)": bb_sq,
               "Stokastik Momentum": stoch,
+              "Fibo SL / Dip": fibo["sl"],
+              "Fibo Golden Pocket (0.618)": fibo["g_pocket"],
+              "Fibo TP1 Hedefi": fibo["tp1"],
+              "Fibo TP2 Hedefi": fibo["tp2"],
               "Kontrat / Hacim": vol_or_contract,
               "Açık Pozisyon (OI)": f"${oi_usd:,.1f}M",
               "Korku Endeksi": f"{fng_val} ({fng_class})",
               "BTC Dominansı": btc_dom,
-              "Haber Yönü (1s)": ns["bias"]["1h"],
+              "Haber Yönü (4s)": ns["bias"]["4h"],
               "Haber Yönü (12s)": ns["bias"]["12h"],
-              "Haber Yönü (1H)": ns["bias"]["1d"],
+              "Haber Yönü (1D)": ns["bias"]["1d"],
           })
   except Exception:
     pass
@@ -549,7 +624,7 @@ with tab1:
       st.rerun()
 
   with st.spinner(
-      "TRT saatiyle mumlar, Auto-Fibo (TP/SL), POC, CVD, Makro ve SMC yapısı"
+      "TRT saatiyle mumlar, Auto-Fibo (TP/SL), POC, CVD, BB Squeeze ve SMC yapısı"
       " hesaplanıyor..."
   ):
     df_matrix = fetch_multi_timeframe_matrix()
@@ -558,7 +633,7 @@ with tab1:
     sheets_success, msg = send_to_google_sheets(df_matrix)
     if sheets_success:
       st.success(
-          "✅ Tüm Canlı Göstergeler & Haber Yönleri Google Sheets"
+          "✅ 4s/12s/1D Haber Yönleri & Ayrılmış Fibo Seviyeleri Google Sheets"
           " (`Crypto_Matrix`) Tablosuna Aktarıldı!"
       )
     else:
@@ -572,13 +647,13 @@ with tab1:
     st.warning("Veriler çekilemedi. Lütfen bağlantıyı kontrol edin.")
 
 # ==============================================================================
-# SEKME 4: TEKNİK & GÖSTERGELER (ÖZEL BAŞLIK BARI İLE TAKVİM)
+# SEKME 4: TEKNİK & GÖSTERGELER (SAYISAL ÖZET KARTLI VE MASAÜSTÜ TAKVİMLİ)
 # ==============================================================================
 with tab4:
   # 1. İKİ KOLONLU KUSURSUZ YAPI
   col_left, col_right = st.columns([1, 1.45])
 
-  # --- SOL KOLON: TÜREV GÖSTERGELERİ + MAKRO KARTLAR + HABER SENTIMENT ---
+  # --- SOL KOLON: TÜREV GÖSTERGELERİ + SAYISAL SMC KARTI + HABER SENTIMENT ---
   with col_left:
     # A) CANLI TÜREV GÖSTERGELERİ VEYA PARİTE SEÇİMİ
     c_head1, c_head2 = st.columns([1.4, 1])
@@ -602,14 +677,14 @@ with tab4:
 
     st.markdown(
         f"""
-        <div style="background-color:#1E222D; border-radius:8px; padding:12px; border:1px solid #2A2E39; margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
+        <div style="background-color:#1E222D; border-radius:8px; padding:10px; border:1px solid #2A2E39; margin-bottom:6px;">
+            <div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
                 <span>Fonlama Oranı (Funding):</span> <b style="color:#F0B90B;">{d_data['funding']}</b>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
+            <div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #2A2E39; font-size:0.8rem;">
                 <span>Top Trader Long / Short ({selected_display}):</span> <b style="color:#10B981;">{d_data['long_pct']}</b> / <b style="color:#EF4444;">{d_data['short_pct']}</b>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:0.8rem;">
+            <div style="display:flex; justify-content:space-between; padding:3px 0; font-size:0.8rem;">
                 <span>Genel Pozisyon Eğilimi:</span> <b>{d_data['bias']}</b>
             </div>
         </div>
@@ -617,7 +692,55 @@ with tab4:
         unsafe_allow_html=True,
     )
 
-    # B) MAKRO DUYGU KARTLARI
+    # B) BÖLÜM 1 EKSİĞİ DÜZELTİLDİ: SAYISAL SMC & POC KRİTİK SEVİYELER KARTI
+    # Seçilen Parite İçin Anlık Mum Verisini Çekip Sayısal Kartı Oluşturuyoruz
+    try:
+      k_url_sel = f"https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract={selected_key}&interval=1h&limit=30"
+      k_res_sel = requests.get(k_url_sel, timeout=4).json()
+      cur_p = (
+          float(k_res_sel[-1][2])
+          if isinstance(k_res_sel[-1], list)
+          else float(k_res_sel[-1].get("c", 0))
+      )
+      smc_s, candle_s, fibo_d, poc_s, cvd_s, stoch_s, bb_s, poc_val = (
+          calculate_advanced_indicators(k_res_sel, cur_p)
+      )
+    except Exception:
+      fibo_d = {
+          "sl": "$0.00",
+          "g_pocket": "$0.00",
+          "tp1": "$0.00",
+          "tp2": "$0.00",
+      }
+      smc_s, poc_val, bb_s = "Sıkışma Bölgesi", "$0.00", "Normal"
+
+    st.markdown(
+        f"""
+        <div style="background-color:#1E222D; border-radius:8px; padding:10px; border:1px solid #F0B90B; margin-bottom:6px;">
+            <h5 style="margin:0; margin-bottom:6px; color:#F0B90B; font-size:0.85rem;">🎯 {selected_display} Kritik Seviyeler & Sayısal SMC Özeti</h5>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:0.78rem;">
+                <div style="background-color:#262B3E; padding:6px; border-radius:4px;">
+                    <span style="color:#94A3B8;">Volume Profile (POC):</span><br><b style="color:#3B82F6;">{poc_val}</b>
+                </div>
+                <div style="background-color:#262B3E; padding:6px; border-radius:4px;">
+                    <span style="color:#94A3B8;">Golden Pocket (0.618):</span><br><b style="color:#F59E0B;">{fibo_d['g_pocket']}</b>
+                </div>
+                <div style="background-color:#262B3E; padding:6px; border-radius:4px;">
+                    <span style="color:#94A3B8;">Aşağı Likidite / SL:</span><br><b style="color:#EF4444;">{fibo_d['sl']}</b>
+                </div>
+                <div style="background-color:#262B3E; padding:6px; border-radius:4px;">
+                    <span style="color:#94A3B8;">Yukarı Likidite / TP1:</span><br><b style="color:#10B981;">{fibo_d['tp1']}</b>
+                </div>
+            </div>
+            <div style="margin-top:6px; font-size:0.75rem; color:#E2E8F0;">
+                <b>SMC Durumu:</b> {smc_s} | <b>Volatilite:</b> {bb_s}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # C) MAKRO DUYGU KARTLARI
     fng_val, fng_class, btc_dom = fetch_macro_indicators()
     m_col1, m_col2 = st.columns(2)
     with m_col1:
@@ -641,9 +764,9 @@ with tab4:
           unsafe_allow_html=True,
       )
 
-    # C) HABER & EKONOMİ RADAR SENTIMENT MATRİSİ
+    # D) HABER & EKONOMİ RADAR SENTIMENT MATRİSİ (4S, 12S, 1D GÜRÜLTÜSÜZ PENCERE)
     st.markdown(
-        "<h4 style='font-size:0.88rem; margin-top:8px; margin-bottom:4px;'"
+        "<h4 style='font-size:0.85rem; margin-top:6px; margin-bottom:4px;'"
         " font-weight:600;'>📰 Haber & Ekonomi Radar Sentiment Matrisi</h4>",
         unsafe_allow_html=True,
     )
@@ -653,7 +776,7 @@ with tab4:
             <thead>
                 <tr>
                     <th style="text-align:left;">Haber & Sektör</th>
-                    <th>1 Saat</th>
+                    <th>4 Saat</th>
                     <th>12 Saat</th>
                     <th>1 Hafta</th>
                 </tr>
@@ -661,25 +784,25 @@ with tab4:
             <tbody>
                 <tr>
                     <td class="flow-label">🌐 Ekonomi (Makro)</td>
-                    <td>{ns['eco']['1h']}</td>
+                    <td>{ns['eco']['4h']}</td>
                     <td>{ns['eco']['12h']}</td>
                     <td>{ns['eco']['1d']}</td>
                 </tr>
                 <tr>
                     <td class="flow-label">🏛️ Politik / Jeopolitik</td>
-                    <td>{ns['pol']['1h']}</td>
+                    <td>{ns['pol']['4h']}</td>
                     <td>{ns['pol']['12h']}</td>
                     <td>{ns['pol']['1d']}</td>
                 </tr>
                 <tr>
                     <td class="flow-label">🚀 Kripto / Sektörel</td>
-                    <td>{ns['crypto']['1h']}</td>
+                    <td>{ns['crypto']['4h']}</td>
                     <td>{ns['crypto']['12h']}</td>
                     <td>{ns['crypto']['1d']}</td>
                 </tr>
                 <tr style="background-color:#262B3E; font-weight:700;">
                     <td class="flow-label">🤖 Piyasa Duygusu</td>
-                    <td style="color:#10B981;">{ns['bias']['1h']}</td>
+                    <td style="color:#10B981;">{ns['bias']['4h']}</td>
                     <td style="color:#F59E0B;">{ns['bias']['12h']}</td>
                     <td style="color:#10B981;">{ns['bias']['1d']}</td>
                 </tr>
@@ -696,10 +819,8 @@ with tab4:
         unsafe_allow_html=True,
     )
 
-    # ÖZEL SÜTUN BAŞLIK BARI VE TRADINGVIEW WIDGET'I
     tv_calendar_code = """
         <div style="width:100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-            <!-- HİZALANMIŞ ÖZEL SÜTUN BAŞLIK BARI -->
             <div style="display: flex; justify-content: space-between; align-items: center; background-color: #262B3E; padding: 6px 14px; border-radius: 6px 6px 0 0; border: 1px solid #333A4E; font-size: 0.78rem; font-weight: 700; color: #94A3B8; margin-bottom: 2px;">
                 <div style="flex: 2; text-align: left; color: #F0B90B;">Etkinlik / Makro Veri</div>
                 <div style="flex: 1.2; display: flex; justify-content: space-between; text-align: right; padding-right: 10px;">
@@ -708,15 +829,14 @@ with tab4:
                     <span style="color: #94A3B8; width: 33%;">Önceki</span>
                 </div>
             </div>
-            <!-- CANLI TAKVİM WIDGET CONTAINER -->
-            <div class="tradingview-widget-container" style="height:700px;width:100%">
+            <div class="tradingview-widget-container" style="height:710px;width:100%">
               <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
               {
               "colorTheme": "dark",
               "isTransparent": true,
               "width": "100%",
-              "height": "700",
+              "height": "710",
               "locale": "tr",
               "importanceFilter": "0",
               "currencyFilter": "USD,EUR,JPY,CNY"
@@ -725,7 +845,7 @@ with tab4:
             </div>
         </div>
         """
-    components.html(tv_calendar_code, height=735)
+    components.html(tv_calendar_code, height=745)
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
