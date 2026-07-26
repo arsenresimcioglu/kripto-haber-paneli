@@ -70,7 +70,6 @@ def send_to_google_sheets(df):
     rows = df.values.tolist()
     payload = [headers] + rows
 
-    # Google Redirect (302) Yapısını Destekleyen İletim
     res = requests.post(
         WEBHOOK_URL,
         data=json.dumps(payload),
@@ -104,8 +103,17 @@ def fetch_futures_matrix():
 
         price = float(item.get("last", 0))
         price_change = float(item.get("change_percentage", 0))
-        volume_usd = float(item.get("volume_24h_usd", 0)) / 1_000_000  # M$
 
+        # --- HACİM HESABI DÜZELTMESİ (volume_24h_settle) ---
+        raw_vol = float(
+            item.get("volume_24h_settle", item.get("volume_24h_quote", 0))
+        )
+        if raw_vol == 0:
+          # Yedek Hesaplama: Kontrat Sayısı * Fiyat
+          raw_vol = float(item.get("volume_24h", 0)) * price
+        volume_usd = raw_vol / 1_000_000  # M$
+
+        # Açık Pozisyon
         total_size = float(item.get("total_size", 0))
         oi_usd = (total_size * price) / 1_000_000  # M$
 
@@ -177,7 +185,6 @@ with tab1:
     df_matrix = fetch_futures_matrix()
 
   if not df_matrix.empty:
-    # GERÇEK TEYİT KONTROLÜ
     sheets_success, msg = send_to_google_sheets(df_matrix)
 
     if sheets_success:
