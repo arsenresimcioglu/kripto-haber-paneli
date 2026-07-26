@@ -178,7 +178,7 @@ def fetch_macro_indicators():
   return fng_val, fng_class, btc_dom
 
 
-# --- BORSADAN PARİTE ÖZELİNDE TÜREV VERİLERİ (LONG/SHORT & FUNDING) ---
+# --- BORSADAN PARİTE ÖZELİNDE TÜREV VERİLERİ ---
 @st.cache_data(ttl=30)
 def fetch_real_derivatives_data(symbol_key):
   try:
@@ -217,7 +217,7 @@ def fetch_real_derivatives_data(symbol_key):
   }
 
 
-# --- CANLI HABER VE EKONOMİ SENTIMENT MATRİSİ (1s, 12s, 1 Hafta) ---
+# --- CANLI HABER VE EKONOMİ SENTIMENT MATRİSİ ---
 @st.cache_data(ttl=60)
 def fetch_news_sentiment_matrix():
   return {
@@ -485,7 +485,6 @@ def fetch_multi_timeframe_matrix():
               else f"${volume_usd:,.1f}M Hacim"
           )
 
-          # MÜKEMMEL DÜZEN: 1s, 12s, 1H Haber Yönlerinin Tamamı Sütun Olarak Eklendi!
           matrix_data.append({
               "Son Güncelleme": now_str,
               "Parite": meta["display"],
@@ -559,7 +558,7 @@ with tab1:
     sheets_success, msg = send_to_google_sheets(df_matrix)
     if sheets_success:
       st.success(
-          "✅ 1s, 12s ve 1H Haber Yönleri Dahil Tüm Matris Google Sheets"
+          "✅ Tüm Canlı Göstergeler & Haber Yönleri Google Sheets"
           " (`Crypto_Matrix`) Tablosuna Aktarıldı!"
       )
     else:
@@ -573,10 +572,10 @@ with tab1:
     st.warning("Veriler çekilemedi. Lütfen bağlantıyı kontrol edin.")
 
 # ==============================================================================
-# SEKME 4: TEKNİK & GÖSTERGELER (YENİLENMİŞ YENİ DÜZEN)
+# SEKME 4: TEKNİK & GÖSTERGELER (CANLI TRADINGVIEW TAKVİMLİ YENİ YAPI)
 # ==============================================================================
 with tab4:
-  # 1. EN ÜST BAR: KULLANIŞLI BAŞLIK VE PARİTE SEÇİMİ
+  # 1. EN ÜST BAR: BAŞLIK VE PARİTE SEÇİMİ
   col_head1, col_head2 = st.columns([2.2, 1])
   with col_head1:
     st.markdown(
@@ -596,7 +595,7 @@ with tab4:
   ][0]
   coinank_symbol = SYMBOLS_MAP[selected_key]["coinank"]
 
-  # 2. İKİ KOLONLU KUSURSUZ YAPI (SOL: MODÜLER DİZİLİ KUTULAR | SAĞ: INVESTING.COM 3-YILDIZ EKONOMİK TAKVİM)
+  # 2. İKİ KOLONLU KUSURSUZ YAPI (SOL: MODÜLER KUTULAR | SAĞ: TRADINGVIEW CANLI KESİNTİSİZ TAKVİM)
   col_left, col_right = st.columns([1, 1.45])
 
   # --- SOL KOLON: TÜM KUTULARIN ALT ALTA DİZİLİMİ ---
@@ -635,7 +634,7 @@ with tab4:
         unsafe_allow_html=True,
     )
 
-    # C) MAKRO DUYGU KARTLARI (KORKU & DOMINANCE)
+    # C) MAKRO DUYGU KARTLARI
     fng_val, fng_class, btc_dom = fetch_macro_indicators()
     m_col1, m_col2 = st.columns(2)
     with m_col1:
@@ -706,21 +705,33 @@ with tab4:
     """
     st.markdown(table_news, unsafe_allow_html=True)
 
-  # --- SAĞ KOLON: INVESTING.COM CANLI 3-YILDIZLI EKONOMİK TAKVİM ---
+  # --- SAĞ KOLON: TRADINGVIEW KESİNTİSİZ 100% CANLI EKONOMİK TAKVİM WIDGET'I ---
   with col_right:
     st.markdown(
         "<h4 style='font-size:0.95rem; margin-top:0px; margin-bottom:6px;'"
-        " font-weight:600; color:#F0B90B;'>📅 Canlı Ekonomik Takvim & Makro"
-        " Ajanda (3-Yıldız Volatilite)</h4>",
+        " font-weight:600; color:#F0B90B;'>📅 Canlı Makro Ekonomik Takvim"
+        " (Koyu Tema)</h4>",
         unsafe_allow_html=True,
     )
 
-    # Investing.com Canlı Filtreli Widget (3-Yıldız / Yüksek Volatiliteli ABD, AB, Çin, Japonya Verileri)
-    investing_widget_code = """
-        <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_align_center&importance=3&features=datepicker,indices,time_sort&countries=5,72,35,43,6&calType=week&timeZone=58&lang=18" 
-        width="100%" height="540" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
+    # TRADINGVIEW CANLI VE KESİNTİSİZ ÇALIŞAN EKONOMİK TAKVİM WIDGET'I
+    tv_calendar_code = """
+        <div class="tradingview-widget-container" style="height:540px;width:100%">
+          <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
+          {
+          "colorTheme": "dark",
+          "isTransparent": true,
+          "width": "100%",
+          "height": "540",
+          "locale": "tr",
+          "importanceFilter": "0",
+          "currencyFilter": "USD,EUR,GBP,JPY,CNY"
+        }
+          </script>
+        </div>
         """
-    components.html(investing_widget_code, height=545)
+    components.html(tv_calendar_code, height=545)
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
