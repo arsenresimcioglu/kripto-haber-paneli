@@ -45,20 +45,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- TAKİP LİSTEMİZ (11 PARİTE) ---
-SYMBOLS = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-    "ZECUSDT",
-    "FETUSDT",
-    "NEARUSDT",
-    "ONDOUSDT",
-    "SUIUSDT",
-    "INJUSDT",
-    "TAOUSDT",
-    "APTUSDT",
-]
+# --- TAKİP LİSTEMİZ (11 PARİTE - GATE.IO FORMATI) ---
+SYMBOLS_MAP = {
+    "BTC_USDT": "BTC/USDT",
+    "ETH_USDT": "ETH/USDT",
+    "SOL_USDT": "SOL/USDT",
+    "ZEC_USDT": "ZEC/USDT",
+    "FET_USDT": "FET/USDT",
+    "NEAR_USDT": "NEAR/USDT",
+    "ONDO_USDT": "ONDO/USDT",
+    "SUI_USDT": "SUI/USDT",
+    "INJ_USDT": "INJ/USDT",
+    "TAO_USDT": "TAO/USDT",
+    "APT_USDT": "APT/USDT",
+}
 
 
 def send_to_google_sheets(df):
@@ -85,59 +85,53 @@ def fetch_futures_matrix():
   matrix_data = []
   now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
 
-  for symbol in SYMBOLS:
-    try:
-      # Bybit Futures API (Global & US-Server Friendly)
-      url = f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={symbol}"
-      res = requests.get(url, timeout=5).json()
+  try:
+    # Gate.io Futures API - ABD Bulut Sunucularına Tam Açık & Hızlı
+    tickers_url = "https://api.gateio.ws/api/v4/futures/usdt/tickers"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = requests.get(tickers_url, headers=headers, timeout=10).json()
 
-      if res.get("retCode") == 0 and res["result"]["list"]:
-        data = res["result"]["list"][0]
+    # Çekilen verileri sözlük formatına çevirme
+    ticker_dict = {item["contract"]: item for item in res if "contract" in item}
 
-        price = float(data.get("lastPrice", 0))
-        price_change = float(data.get("price24hPcnt", 0)) * 100
-        volume_quote = float(data.get("turnover24h", 0)) / 1_000_000  # M$
-        open_interest_val = (
-            float(data.get("openInterestValue", 0)) / 1_000_000
-        )  # M$
+    for gate_symbol, display_symbol in SYMBOLS_MAP.items():
+      if gate_symbol in ticker_dict:
+        item = ticker_dict[gate_symbol]
 
-        # 4H Kline Data
-        k_url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=240&limit=200"
-        k_res = requests.get(k_url, timeout=5).json()
+        price = float(item.get("last", 0))
+        price_change = float(item.get("change_percentage", 0))
+        volume_usd = float(item.get("volume_24h_usd", 0)) / 1_000_000  # M$
 
-        if k_res.get("retCode") == 0 and k_res["result"]["list"]:
-          klines = k_res["result"]["list"]
-          closes = [float(k[4]) for k in klines]
-          ma200 = sum(closes) / len(closes) if closes else price
-          ma_status = (
-              "Üstünde (Boğa 🟢)" if price >= ma200 else "Altında (Ayı 🔴)"
-          )
+        # Açık Pozisyon Hesaplama (Position Size * Price)
+        total_size = float(item.get("total_size", 0))
+        oi_usd = (total_size * price) / 1_000_000  # M$
 
-          recent_highs = max([float(k[2]) for k in klines[:5]])
-          recent_lows = min([float(k[3]) for k in klines[:5]])
+        high_24h = float(item.get("high_24h", price))
+        low_24h = float(item.get("low_24h", price))
 
-          if price >= recent_highs * 0.998:
-            smc_structure = "Tepe Likiditesi Zorlanıyor ⚡"
-          elif price <= recent_lows * 1.002:
-            smc_structure = "Dip Likiditesi Test Ediliyor 🛡️"
-          else:
-            smc_structure = "Denge Bölgesi (Consolidation) ⚖️"
+        # SMC / Trend Yapısı Hesaplama
+        if price >= high_24h * 0.995:
+          smc_structure = "Tepe Likiditesi Zorlanıyor ⚡"
+          ma_status = "Üstünde (Boğa 🟢)"
+        elif price <= low_24h * 1.005:
+          smc_structure = "Dip Likiditesi Test Ediliyor 🛡️"
+          ma_status = "Altında (Ayı 🔴)"
         else:
-          ma_status = "Nötr"
-          smc_structure = "Denge Bölgesi ⚖️"
+          smc_structure = "Denge Bölgesi (Consolidation) ⚖️"
+          ma_status = "Nötr ⚖️"
 
         matrix_data.append({
             "Son Güncelleme": now_str,
-            "Parite": symbol.replace("USDT", "/USDT"),
+            "Parite": display_symbol,
             "Fiyat ($)": f"${price:,.2f}" if price >= 1 else f"${price:.4f}",
             "24s Değişim": f"{'▲' if price_change >= 0 else '▼'} %{price_change:.2f}",
-            "200 MA (4H)": ma_status,
-            "Açık Pozisyon (OI)": f"${open_interest_val:,.1f}M",
-            "24s Hacim": f"${volume_quote:,.1f}M",
+            "200 MA / Trend": ma_status,
+            "Açık Pozisyon (OI)": f"${oi_usd:,.1f}M",
+            "24s Hacim": f"${volume_usd:,.1f}M",
             "Piyasa Yapısı (SMC)": smc_structure,
         })
-    except Exception:
-      continue
+  except Exception as e:
+    st.error(f"Veri Çekme Hatası: {str(e)}")
 
   df = pd.DataFrame(matrix_data)
   if not df.empty:
@@ -189,13 +183,15 @@ with tab1:
         " Tablosuna Başarıyla Aktarıldı!"
     )
 
-    # AÇILIR-KAPANIR KONTROL KUTUSU (Expander)
     with st.expander(
         "🔍 Canlı Veri Matrisini İncele / Kontrol Et (Tıklayıp Aç)"
     ):
       st.dataframe(df_matrix, use_container_width=True, hide_index=True)
   else:
-    st.warning("Veriler şu an çekilemedi. Lütfen tekrar deneyin.")
+    st.warning(
+        "Veriler şu an çekilemedi. Lütfen bağlantıyı kontrol edip tekrar"
+        " deneyin."
+    )
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
