@@ -572,16 +572,16 @@ with tab1:
     st.warning("Veriler çekilemedi. Lütfen bağlantıyı kontrol edin.")
 
 # ==============================================================================
-# SEKME 4: TEKNİK & GÖSTERGELER (MİNİMAL VE KUSURSUZ PANEL DÜZENİ)
+# SEKME 4: TEKNİK & GÖSTERGELER (GENİŞLETİLMİŞ MASAÜSTÜ TAKVİM DÜZENİ)
 # ==============================================================================
 with tab4:
-  # 1. İKİ KOLONLU KUSURSUZ YAPI
-  col_left, col_right = st.columns([1, 1.4])
+  # 1. İKİ KOLONLU KUSURSUZ YAPI (SAĞ KOLON GENİŞLETİLDİ)
+  col_left, col_right = st.columns([1, 1.8])
 
   # --- SOL KOLON: TÜREV GÖSTERGELERİ + MAKRO KARTLAR + HABER SENTIMENT ---
   with col_left:
     # A) CANLI TÜREV GÖSTERGELERİ VEYA PARİTE SEÇİMİ
-    c_head1, c_head2 = st.columns([1.5, 1])
+    c_head1, c_head2 = st.columns([1.4, 1])
     with c_head1:
       st.markdown(
           "<h4 style='margin:0; margin-top:4px; color:#3B82F6;"
@@ -688,32 +688,33 @@ with tab4:
     """
     st.markdown(table_news, unsafe_allow_html=True)
 
-  # --- SAĞ KOLON: TRADINGVIEW CANLI VE KUSURSUZ EKONOMİK TAKVİM ---
+  # --- SAĞ KOLON: TAM TABLO / MASAÜSTÜ MODUNDA BAŞLIKLI CANLI TAKVİM ---
   with col_right:
     st.markdown(
         "<h4 style='font-size:0.95rem; margin-top:0px; margin-bottom:6px;'"
         " font-weight:600; color:#F0B90B;'>📅 Canlı Makro Ekonomik Takvim"
-        " (Koyu Tema)</h4>",
+        " (Açıklanan / Beklenen / Önceki Detaylı)</h4>",
         unsafe_allow_html=True,
     )
 
+    # WIDGET GENİŞLİĞİ ARTIRILARAK 'AÇIKLANAN / BEKLENEN / ÖNCEKİ' BAŞLIKLARI AKTİF EDİLDİ
     tv_calendar_code = """
-        <div class="tradingview-widget-container" style="height:480px;width:100%">
+        <div class="tradingview-widget-container" style="height:750px;width:100%">
           <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
           {
           "colorTheme": "dark",
           "isTransparent": true,
           "width": "100%",
-          "height": "480",
+          "height": "750",
           "locale": "tr",
           "importanceFilter": "0",
-          "currencyFilter": "USD,EUR,GBP,JPY,CNY"
+          "currencyFilter": "USD,EUR,JPY,CNY"
         }
           </script>
         </div>
         """
-    components.html(tv_calendar_code, height=485)
+    components.html(tv_calendar_code, height=755)
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
