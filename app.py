@@ -61,12 +61,10 @@ SYMBOLS = [
 ]
 
 
-# --- GOOGLE SHEETS'E VERİ GÖNDERME FONKSİYONU ---
 def send_to_google_sheets(df):
   if df.empty:
     return False
   try:
-    # Google Sheets için 2D Matris Hazırlığı
     headers = list(df.columns)
     rows = df.values.tolist()
     payload = [headers] + rows
@@ -82,7 +80,6 @@ def send_to_google_sheets(df):
     return False
 
 
-# --- BİNANCE FUTURES CANLI VERİ MOTORU ---
 @st.cache_data(ttl=30)
 def fetch_futures_matrix():
   matrix_data = []
@@ -90,65 +87,61 @@ def fetch_futures_matrix():
 
   for symbol in SYMBOLS:
     try:
-      # 1. Canlı Fiyat ve 24s Ticker Bilgisi
-      ticker_url = (
-          f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={symbol}"
-      )
-      t_res = requests.get(ticker_url, timeout=5).json()
+      # Bybit Futures API (Global & US-Server Friendly)
+      url = f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={symbol}"
+      res = requests.get(url, timeout=5).json()
 
-      price = float(t_res.get("lastPrice", 0))
-      price_change = float(t_res.get("priceChangePercent", 0))
-      volume_quote = float(t_res.get("quoteVolume", 0)) / 1_000_000  # M$
+      if res.get("retCode") == 0 and res["result"]["list"]:
+        data = res["result"]["list"][0]
 
-      # 2. Açık Pozisyon (Open Interest - OI)
-      oi_url = (
-          f"https://fapi.binance.com/fapi/v1/openInterest?symbol={symbol}"
-      )
-      oi_res = requests.get(oi_url, timeout=5).json()
-      open_interest_contracts = float(oi_res.get("openInterest", 0))
-      oi_value_usd = (open_interest_contracts * price) / 1_000_000  # M$
+        price = float(data.get("lastPrice", 0))
+        price_change = float(data.get("price24hPcnt", 0)) * 100
+        volume_quote = float(data.get("turnover24h", 0)) / 1_000_000  # M$
+        open_interest_val = (
+            float(data.get("openInterestValue", 0)) / 1_000_000
+        )  # M$
 
-      # 3. 4 Saatlik Mumlar (200 MA ve SMC Yapısı)
-      klines_url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=4h&limit=200"
-      k_res = requests.get(klines_url, timeout=5).json()
+        # 4H Kline Data
+        k_url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=240&limit=200"
+        k_res = requests.get(k_url, timeout=5).json()
 
-      if len(k_res) >= 200:
-        closes = [float(k[4]) for k in k_res]
-        ma200 = sum(closes) / 200
-        ma_status = "Üstünde (Boğa 🟢)" if price > ma200 else "Altında (Ayı 🔴)"
+        if k_res.get("retCode") == 0 and k_res["result"]["list"]:
+          klines = k_res["result"]["list"]
+          closes = [float(k[4]) for k in klines]
+          ma200 = sum(closes) / len(closes) if closes else price
+          ma_status = (
+              "Üstünde (Boğa 🟢)" if price >= ma200 else "Altında (Ayı 🔴)"
+          )
 
-        recent_highs = max([float(k[2]) for k in k_res[-5:]])
-        recent_lows = min([float(k[3]) for k in k_res[-5:]])
+          recent_highs = max([float(k[2]) for k in klines[:5]])
+          recent_lows = min([float(k[3]) for k in klines[:5]])
 
-        if price >= recent_highs * 0.998:
-          smc_structure = "Tepe Likiditesi Zorlanıyor ⚡"
-        elif price <= recent_lows * 1.002:
-          smc_structure = "Dip Likiditesi Test Ediliyor 🛡️"
+          if price >= recent_highs * 0.998:
+            smc_structure = "Tepe Likiditesi Zorlanıyor ⚡"
+          elif price <= recent_lows * 1.002:
+            smc_structure = "Dip Likiditesi Test Ediliyor 🛡️"
+          else:
+            smc_structure = "Denge Bölgesi (Consolidation) ⚖️"
         else:
-          smc_structure = "Denge Bölgesi (Consolidation) ⚖️"
-      else:
-        ma_status = "Veri Yetersiz"
-        smc_structure = "Nötr"
+          ma_status = "Nötr"
+          smc_structure = "Denge Bölgesi ⚖️"
 
-      matrix_data.append({
-          "Son Güncelleme": now_str,
-          "Parite": symbol.replace("USDT", "/USDT"),
-          "Fiyat ($)": f"${price:,.2f}" if price >= 1 else f"${price:.4f}",
-          "24s Değişim": f"{'▲' if price_change >= 0 else '▼'} %{price_change:.2f}",
-          "200 MA (4H)": ma_status,
-          "Açık Pozisyon (OI)": f"${oi_value_usd:,.1f}M",
-          "24s Hacim": f"${volume_quote:,.1f}M",
-          "Piyasa Yapısı (SMC)": smc_structure,
-      })
+        matrix_data.append({
+            "Son Güncelleme": now_str,
+            "Parite": symbol.replace("USDT", "/USDT"),
+            "Fiyat ($)": f"${price:,.2f}" if price >= 1 else f"${price:.4f}",
+            "24s Değişim": f"{'▲' if price_change >= 0 else '▼'} %{price_change:.2f}",
+            "200 MA (4H)": ma_status,
+            "Açık Pozisyon (OI)": f"${open_interest_val:,.1f}M",
+            "24s Hacim": f"${volume_quote:,.1f}M",
+            "Piyasa Yapısı (SMC)": smc_structure,
+        })
     except Exception:
       continue
 
   df = pd.DataFrame(matrix_data)
-
-  # Otomatik Google Sheets'e Yazma
   if not df.empty:
     send_to_google_sheets(df)
-
   return df
 
 
@@ -174,7 +167,7 @@ tab1, tab2, tab3 = st.tabs([
 ])
 
 # ==============================================================================
-# SEKME 1: TEKNİK & GÖSTERGELER (Canlı Veri Matrisi)
+# SEKME 1: TEKNİK & GÖSTERGELER
 # ==============================================================================
 with tab1:
   st.subheader("📊 SMC, Order Flow ve Teknik Veri Matrisi")
@@ -186,15 +179,23 @@ with tab1:
       st.rerun()
 
   with st.spinner(
-      "Binance Futures verileri çekiliyor ve Google Sheets'e işleniyor..."
+      "Canlı piyasa verileri işleniyor ve Google Sheets'e aktarılıyor..."
   ):
     df_matrix = fetch_futures_matrix()
 
   if not df_matrix.empty:
-    st.success("✅ Veriler güncellendi ve Google Sheets'e otomatik aktarıldı!")
-    st.dataframe(df_matrix, use_container_width=True, hide_index=True)
+    st.success(
+        "✅ 11 Paritenin Canlı Teknik Matrisi Google Sheets (`Crypto_Matrix`)"
+        " Tablosuna Başarıyla Aktarıldı!"
+    )
+
+    # AÇILIR-KAPANIR KONTROL KUTUSU (Expander)
+    with st.expander(
+        "🔍 Canlı Veri Matrisini İncele / Kontrol Et (Tıklayıp Aç)"
+    ):
+      st.dataframe(df_matrix, use_container_width=True, hide_index=True)
   else:
-    st.warning("Veriler şu an çekilemedi. Lütfen bağlantınızı kontrol edin.")
+    st.warning("Veriler şu an çekilemedi. Lütfen tekrar deneyin.")
 
 # ==============================================================================
 # SEKME 2: HABER & EKONOMİ RADARI
