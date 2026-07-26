@@ -9,6 +9,45 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# --- ÖZEL TASARIM (Üst Boşluğu Azaltma ve Elit Renk Kurgusu) ---
+st.markdown(
+    """
+    <style>
+        /* Üst taraftaki devasa boşluğu kaldırma */
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 0rem !important;
+        }
+        
+        /* Streamlit üst bar yüksekliğini daraltma */
+        header[data-testid="stHeader"] {
+            height: 2rem !important;
+            background-color: transparent !important;
+        }
+
+        /* Pasif Sekmeler (Slate Grisi) */
+        button[data-baseweb="tab"] {
+            color: #94A3B8 !important;
+            font-size: 1.05rem !important;
+            font-weight: 500 !important;
+            padding-bottom: 8px !important;
+        }
+
+        /* Aktif (Seçili) Sekme Metni (Elit Altın/Amber) */
+        button[data-baseweb="tab"][aria-selected="true"] {
+            color: #F0B90B !important;
+            font-weight: 600 !important;
+        }
+
+        /* Agresif Kırmızı Çizgiyi Şampanya/Altın Rengine Çevirme */
+        div[data-baseweb="tab-highlight"] {
+            background-color: #F0B90B !important;
+        }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 # Google Sheets Canlı Haber Bağlantısı
 SHEET_ID = "15oys_jSdW0q8ePdUna0BVirzTyazzsMfvJCcral7VgI"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
