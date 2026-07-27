@@ -8,13 +8,28 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
-# Sayfa Yapılandırması
+# SAYFA YAPILANDIRMASI
 st.set_page_config(
     page_title="Crypto & Macro Terminal V2.0",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed",
+)
+
+# STYLES / CSS
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+    header[data-testid="stHeader"] { visibility: hidden; }
+    div[data-testid="stVerticalBlock"] > div { gap: 0.5rem !important; }
+    .stButton>button { width: 100%; background-color: #1E293B; color: #F8FAFC; border: 1px solid #334155; font-weight: 600; border-radius: 8px; }
+    .stButton>button:hover { background-color: #334155; border-color: #38BDF8; color: #38BDF8; }
+    </style>
+""",
+    unsafe_allow_html=True,
 )
 
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx4JHGGGocczm8hpQSMU0wmWUbfiIctOmV4M825YNnjo9cGsnwKjEwcUMmyo7PVO6RK7Q/exec"
@@ -546,16 +561,92 @@ def run_cron_update():
   return None
 
 
-# STREAMLIT ARAYÜZÜ
-st.title("⚡ Crypto & Macro Terminal V2.0")
+# STREAMLIT ÜST BAŞLIK & TETO
+col_title, col_btn = st.columns([3, 1])
 
-if st.button("🔄 Verileri Hemen Güncelle"):
-  with st.spinner("Tüm veriler taranıyor ve Google Sheets'e aktarılıyor..."):
-    status = run_cron_update()
-    if status == 200:
-      st.success(
-          "✅ Veriler başarıyla güncellendi! Google Sheets tablonuzu kontrol"
-          " edebilirsiniz."
-      )
-    else:
-      st.error("⚠️ Güncelleme sırasında bir hata oluştu.")
+with col_title:
+  st.title("⚡ Crypto & Macro Terminal V2.0")
+
+with col_btn:
+  st.write("")
+  if st.button("🔄 Verileri Hemen Güncelle"):
+    with st.spinner("Sheets & Telegram güncelleniyor..."):
+      status = run_cron_update()
+      if status == 200:
+        st.success("✅ Veriler Google Sheets'e aktarıldı!")
+      else:
+        st.error("⚠️ Güncelleme hatası.")
+
+# TAB SEKMELERİ RESTORE EDİLDİ
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Crypto Matrix (Canlı Tablo)",
+    "📅 Canlı Ekonomik Takvim & Makro Ajanda (3 Yıldız Volatilite)",
+    "📈 TradingView & Likidasyon Isı Haritası",
+    "📰 Haber Akışı & Duyarlılık",
+])
+
+with tab1:
+  st.markdown("### 🔍 Canlı Crypto Matrix Veri Akışı")
+  # Embedded Google Sheets View
+  sheets_iframe = """
+    <iframe src="https://docs.google.com/spreadsheets/d/e/2PACX-1vT5N7B8-Gv_Y-wI4I-f2J3R2cK8XN-Z5X/pubhtml?widget=true&amp;headers=false" 
+            width="100%" height="650" frameborder="0"></iframe>
+    """
+  components.html(sheets_iframe, height=660)
+
+with tab2:
+  st.markdown("### 📅 Canlı Ekonomik Takvim & Makro Ajanda")
+  eco_calendar_html = """
+    <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,importance,event,actual,forecast,previous&category=_all&importance=2,3&features=datepicker,timezone&countries=5,72,17,43,37,6&calType=week&timeZone=8" 
+            width="100%" height="650" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
+    """
+  components.html(eco_calendar_html, height=660)
+
+with tab3:
+  col_chart1, col_chart2 = st.columns(2)
+  with col_chart1:
+    st.markdown("### 📈 TradingView Canlı Grafik")
+    tv_html = """
+        <div class="tradingview-widget-container" style="height:100%;width:100%">
+          <div id="tradingview_chart" style="height:550px;width:100%"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+          new TradingView.widget({
+            "autosize": true,
+            "symbol": "BINANCE:BTCUSDT",
+            "interval": "15",
+            "timezone": "Europe/Istanbul",
+            "theme": "dark",
+            "style": "1",
+            "locale": "tr",
+            "toolbar_bg": "#f1f3f6",
+            "enable_publishing": false,
+            "container_id": "tradingview_chart"
+          });
+          </script>
+        </div>
+        """
+    components.html(tv_html, height=560)
+
+  with col_chart2:
+    st.markdown("### 🔥 Likidasyon Isı Haritası & Tahta Derinliği")
+    coinglass_html = """
+        <iframe src="https://www.coinglass.com/pro/futures/LiquidationHeatMap" width="100%" height="550" frameborder="0"></iframe>
+        """
+    components.html(coinglass_html, height=560)
+
+with tab4:
+  st.markdown("### 📰 Piyasa Duyarlılığı & Haber Radarı")
+  fng_val, fng_class, btc_dom = fetch_macro_indicators()
+
+  m1, m2, m3 = st.columns(3)
+  m1.metric("Korku & Açgözlülük Endeksi", f"{fng_val} ({fng_class})")
+  m2.metric("BTC Dominansı", btc_dom)
+  m3.metric("Terminal Durumu", "V2.0 Canlı 🚀")
+
+  st.markdown("---")
+  st.info(
+      "💡 **İpucu:** Sistemimiz hem tahtadaki $500K / $250K / $100K üzeri balina"
+      " emirlerini hem de @whale_alert üzerindeki devasa zincir üstü (On-Chain)"
+      " transferleri 15 dakikalık periyotlarla tarayarak canlı tabloya işler."
+  )
