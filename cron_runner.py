@@ -1,6 +1,7 @@
 import datetime
 from datetime import timedelta, timezone
 import json
+import time
 import numpy as np
 import pandas as pd
 import requests
@@ -11,18 +12,18 @@ TELEGRAM_TOKEN = "8844757455:AAELoord_Vd3KnxfqgE6MzI0fAXN5ik6H2E"
 TELEGRAM_CHAT_ID = "6884767698"
 
 SYMBOLS_MAP = {
-    "BTC_USDT": {"display": "BTC/USDT"},
-    "ETH_USDT": {"display": "ETH/USDT"},
-    "SOL_USDT": {"display": "SOL/USDT"},
-    "ZEC_USDT": {"display": "ZEC/USDT"},
-    "FET_USDT": {"display": "FET/USDT"},
-    "NEAR_USDT": {"display": "NEAR/USDT"},
-    "ONDO_USDT": {"display": "ONDO/USDT"},
-    "SUI_USDT": {"display": "SUI/USDT"},
-    "INJ_USDT": {"display": "INJ/USDT"},
-    "TAO_USDT": {"display": "TAO/USDT"},
-    "APT_USDT": {"display": "APT/USDT"},
-    "HYPE_USDT": {"display": "HYPE/USDT"},
+    "BTC_USDT": {"display": "BTC/USDT", "binance": "BTCUSDT"},
+    "ETH_USDT": {"display": "ETH/USDT", "binance": "ETHUSDT"},
+    "SOL_USDT": {"display": "SOL/USDT", "binance": "SOLUSDT"},
+    "ZEC_USDT": {"display": "ZEC/USDT", "binance": "ZECUSDT"},
+    "FET_USDT": {"display": "FET/USDT", "binance": "FETUSDT"},
+    "NEAR_USDT": {"display": "NEAR/USDT", "binance": "NEARUSDT"},
+    "ONDO_USDT": {"display": "ONDO/USDT", "binance": "ONDOUSDT"},
+    "SUI_USDT": {"display": "SUI/USDT", "binance": "SUIUSDT"},
+    "INJ_USDT": {"display": "INJ/USDT", "binance": "INJUSDT"},
+    "TAO_USDT": {"display": "TAO/USDT", "binance": "TAOUSDT"},
+    "APT_USDT": {"display": "APT/USDT", "binance": "APTUSDT"},
+    "HYPE_USDT": {"display": "HYPE/USDT", "binance": "HYPEUSDT"},
 }
 
 
@@ -37,6 +38,42 @@ def send_telegram_alert(message):
     requests.post(url, json=payload, timeout=5)
   except Exception as e:
     print(f"Telegram Bildirim Hatası: {e}")
+
+
+def fetch_whale_trades_15m(binance_symbol):
+  """Binance Futures aggTrades üzerinden son 15 dakikada gerçekleşen >= $500K balina emirlerini hesaplar."""
+  try:
+    end_time = int(time.time() * 1000)
+    start_time = end_time - (15 * 60 * 1000)  # Son 15 dakika
+
+    url = f"https://fapi.binance.com/fapi/v1/aggTrades?symbol={binance_symbol}&startTime={start_time}&endTime={end_time}&limit=1000"
+    res = requests.get(url, timeout=5).json()
+
+    whale_buy_usd = 0.0
+    whale_sell_usd = 0.0
+
+    if isinstance(res, list):
+      for trade in res:
+        price = float(trade.get("p", 0))
+        qty = float(trade.get("q", 0))
+        trade_val = price * qty
+
+        if trade_val >= 500000:  # $500,000 üzeri Balina filtresi
+          is_buyer_maker = trade.get("m", False)
+          if is_buyer_maker:
+            whale_sell_usd += trade_val  # Market Satış
+          else:
+            whale_buy_usd += trade_val  # Market Alış
+
+    net_whale = whale_buy_usd - whale_sell_usd
+    if net_whale > 0:
+      return f"+${net_whale/1_000_000:.2f}M (Net Alım 🟢)"
+    elif net_whale < 0:
+      return f"-${abs(net_whale)/1_000_000:.2f}M (Net Satım 🔴)"
+    else:
+      return "$0.00M (Sakin ⚖️)"
+  except Exception:
+    return "$0.00M (Nötr)"
 
 
 def fetch_macro_indicators():
@@ -275,6 +312,9 @@ def run_cron_update():
             / 1_000_000
         )
 
+        # 15 DAKİKALIK BALİNA HACİM DELTASINI ÇEK ($500K+)
+        whale_delta_str = fetch_whale_trades_15m(meta["binance"])
+
         for tf_label, tf_gate in tf_map.items():
           try:
             k_res = requests.get(
@@ -295,31 +335,31 @@ def run_cron_update():
                 bb_w,
             ) = calculate_advanced_indicators(k_res, price)
 
-            # TELEGRAM SİNYAL KONTROLÜ (Sadece 15dk zaman diliminde)
+            # TELEGRAM SİNYAL KONTROLÜ
             if tf_label == "15dk":
               formatted_price = (
                   f"${price:,.2f}" if price >= 1 else f"${price:.4f}"
               )
 
-              # 1. Squeeze Bildirimi (%0.7 ve altı)
               if bb_w <= 0.007:
                 alert_msg = (
                     f"⚠️ <b>VOLATİLİTE SIKIŞMASI (SQUEEZE)</b>\n\n"
                     f"<b>Parite:</b> {meta['display']}\n"
                     f"<b>Fiyat:</b> {formatted_price}\n"
                     f"<b>Squeeze Oranı:</b> %{bb_w*100:.2f}\n"
+                    f"<b>15dk Balina Hacim Delta:</b> {whale_delta_str}\n"
                     f"<b>Önceki Mum (C-1):</b> {c1}\n\n"
                     f"⚡ <i>Büyük patlama/kırılım yaklaşıyor!</i>"
                 )
                 send_telegram_alert(alert_msg)
 
-              # 2. Likidite Temizliği (Sweep) Bildirimi
               if "Sweep" in smc:
                 alert_msg = (
                     f"🛡️ <b>LİKİDİTE TEMİZLİĞİ (SWEEP) DETECTED</b>\n\n"
                     f"<b>Parite:</b> {meta['display']}\n"
                     f"<b>Fiyat:</b> {formatted_price}\n"
                     f"<b>Yapı Durumu:</b> {smc}\n"
+                    f"<b>15dk Balina Hacim Delta:</b> {whale_delta_str}\n"
                     f"<b>PA Context:</b> {pa}\n\n"
                     f"🔥 <i>Tuzak hareketi sonrası dönüş fırsatı!</i>"
                 )
@@ -355,6 +395,7 @@ def run_cron_update():
               "SMC & Yapı Analizi": smc,
               "Önceki Mum Formasyonu (C-1)": c1,
               "Son 3 Mum Yapısı (PA Context)": pa,
+              "15dk Balina Hacim Delta ($500K+)": whale_delta_str,
               "Aktif Mum (C-0)": c0,
               "Volume Profile (POC)": poc,
               "CVD / Order Flow Delta": cvd,
