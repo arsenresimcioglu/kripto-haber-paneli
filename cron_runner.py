@@ -1,7 +1,9 @@
 import datetime
 from datetime import timedelta, timezone
 import json
+import re
 import time
+from bs4 import BeautifulSoup
 import numpy as np
 import pandas as pd
 import requests
@@ -13,18 +15,78 @@ TELEGRAM_CHAT_ID = "6884767698"
 
 # PARİTE BAZLI DİNAMİK BALİNA EŞİKLERİ (USD)
 SYMBOLS_MAP = {
-    "BTC_USDT": {"display": "BTC/USDT", "binance": "BTCUSDT", "threshold": 500000},
-    "ETH_USDT": {"display": "ETH/USDT", "binance": "ETHUSDT", "threshold": 500000},
-    "SOL_USDT": {"display": "SOL/USDT", "binance": "SOLUSDT", "threshold": 250000},
-    "SUI_USDT": {"display": "SUI/USDT", "binance": "SUIUSDT", "threshold": 250000},
-    "ZEC_USDT": {"display": "ZEC/USDT", "binance": "ZECUSDT", "threshold": 100000},
-    "FET_USDT": {"display": "FET/USDT", "binance": "FETUSDT", "threshold": 100000},
-    "NEAR_USDT": {"display": "NEAR/USDT", "binance": "NEARUSDT", "threshold": 100000},
-    "ONDO_USDT": {"display": "ONDO/USDT", "binance": "ONDOUSDT", "threshold": 100000},
-    "INJ_USDT": {"display": "INJ/USDT", "binance": "INJUSDT", "threshold": 100000},
-    "TAO_USDT": {"display": "TAO/USDT", "binance": "TAOUSDT", "threshold": 100000},
-    "APT_USDT": {"display": "APT/USDT", "binance": "APTUSDT", "threshold": 100000},
-    "HYPE_USDT": {"display": "HYPE/USDT", "binance": "HYPEUSDT", "threshold": 100000},
+    "BTC_USDT": {
+        "display": "BTC/USDT",
+        "binance": "BTCUSDT",
+        "threshold": 500000,
+        "tag": "BTC",
+    },
+    "ETH_USDT": {
+        "display": "ETH/USDT",
+        "binance": "ETHUSDT",
+        "threshold": 500000,
+        "tag": "ETH",
+    },
+    "SOL_USDT": {
+        "display": "SOL/USDT",
+        "binance": "SOLUSDT",
+        "threshold": 250000,
+        "tag": "SOL",
+    },
+    "SUI_USDT": {
+        "display": "SUI/USDT",
+        "binance": "SUIUSDT",
+        "threshold": 250000,
+        "tag": "SUI",
+    },
+    "ZEC_USDT": {
+        "display": "ZEC/USDT",
+        "binance": "ZECUSDT",
+        "threshold": 100000,
+        "tag": "ZEC",
+    },
+    "FET_USDT": {
+        "display": "FET/USDT",
+        "binance": "FETUSDT",
+        "threshold": 100000,
+        "tag": "FET",
+    },
+    "NEAR_USDT": {
+        "display": "NEAR/USDT",
+        "binance": "NEARUSDT",
+        "threshold": 100000,
+        "tag": "NEAR",
+    },
+    "ONDO_USDT": {
+        "display": "ONDO/USDT",
+        "binance": "ONDOUSDT",
+        "threshold": 100000,
+        "tag": "ONDO",
+    },
+    "INJ_USDT": {
+        "display": "INJ/USDT",
+        "binance": "INJUSDT",
+        "threshold": 100000,
+        "tag": "INJ",
+    },
+    "TAO_USDT": {
+        "display": "TAO/USDT",
+        "binance": "TAOUSDT",
+        "threshold": 100000,
+        "tag": "TAO",
+    },
+    "APT_USDT": {
+        "display": "APT/USDT",
+        "binance": "APTUSDT",
+        "threshold": 100000,
+        "tag": "APT",
+    },
+    "HYPE_USDT": {
+        "display": "HYPE/USDT",
+        "binance": "HYPEUSDT",
+        "threshold": 100000,
+        "tag": "HYPE",
+    },
 }
 
 
@@ -41,11 +103,51 @@ def send_telegram_alert(message):
     print(f"Telegram Bildirim Hatası: {e}")
 
 
+def fetch_onchain_whale_alerts():
+  """@whale_alert Telegram kanalını web preview üzerinden tarayıp coin bazlı on-chain akışını çıkarır."""
+  onchain_data = {}
+  try:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+    }
+    res = requests.get("https://t.me/s/whale_alert", headers=headers, timeout=6)
+    if res.status_code == 200:
+      soup = BeautifulSoup(res.text, "html.parser")
+      messages = soup.find_all("div", class_="tgme_widget_message_text")
+
+      for msg in messages[-15:]:  # Son 15 mesajı tara
+        text = msg.get_text(separator=" ")
+
+        for sym_key, meta in SYMBOLS_MAP.items():
+          tag = meta["tag"]
+          if f"#{tag}" in text or f" {tag} " in text:
+            # Transfer yönü tespiti
+            if "to #Binance" in text or "to #Exchange" in text:
+              direction = "Borsaya Giriş (Satış Riski 🚨)"
+            elif "from #Binance" in text or "from #Exchange" in text:
+              direction = "Soğuk Cüzdana Çıkış (Toplama 🛡️)"
+            else:
+              direction = "Cüzdandan Cüzdana Transfer 🔄"
+
+            # Tutar tespiti (USD)
+            usd_match = re.search(r"\(([\d,]+)\s*USD\)", text)
+            usd_val = usd_match.group(1) if usd_match else "Büyük Transfer"
+
+            summary = f"{direction} [${usd_val}]"
+            onchain_data[meta["display"]] = summary
+  except Exception as e:
+    print(f"On-Chain Scraping Hatası: {e}")
+
+  return onchain_data
+
+
 def fetch_whale_trades_15m(binance_symbol, threshold):
   """Binance Futures aggTrades üzerinden son 15 dakikada gerçekleşen dinamik eşikli balina emirlerini hesaplar."""
   try:
     end_time = int(time.time() * 1000)
-    start_time = end_time - (15 * 60 * 1000)  # Son 15 dakika
+    start_time = end_time - (15 * 60 * 1000)
 
     url = f"https://fapi.binance.com/fapi/v1/aggTrades?symbol={binance_symbol}&startTime={start_time}&endTime={end_time}&limit=1000"
     res = requests.get(url, timeout=5).json()
@@ -59,12 +161,12 @@ def fetch_whale_trades_15m(binance_symbol, threshold):
         qty = float(trade.get("q", 0))
         trade_val = price * qty
 
-        if trade_val >= threshold:  # Dinamik Eşik Filtresi
+        if trade_val >= threshold:
           is_buyer_maker = trade.get("m", False)
           if is_buyer_maker:
-            whale_sell_usd += trade_val  # Market Satış
+            whale_sell_usd += trade_val
           else:
-            whale_buy_usd += trade_val  # Market Alış
+            whale_buy_usd += trade_val
 
     net_whale = whale_buy_usd - whale_sell_usd
     if net_whale > 0:
@@ -295,6 +397,9 @@ def run_cron_update():
   fng_val, fng_class, btc_dom = fetch_macro_indicators()
   tf_map = {"15dk": "15m", "1s": "1h", "4s": "4h", "1D": "1d"}
 
+  # ON-CHAIN WHALE ALERT VERİLERİNİ ÇEK
+  onchain_map = fetch_onchain_whale_alerts()
+
   try:
     res = requests.get(
         "https://api.gateio.ws/api/v4/futures/usdt/tickers", timeout=10
@@ -313,9 +418,14 @@ def run_cron_update():
             / 1_000_000
         )
 
-        # DİNAMİK EŞİKLİ BALİNA HACİM DELTASI HESABI
+        # DİNAMİK EŞİKLİ TAHTA BALİNA DELTASI
         threshold = meta.get("threshold", 100000)
         whale_delta_str = fetch_whale_trades_15m(meta["binance"], threshold)
+
+        # ON-CHAIN BİLGİSİ
+        onchain_info = onchain_map.get(
+            meta["display"], "Aktivite Yok / Sakin ⚖️"
+        )
 
         for tf_label, tf_gate in tf_map.items():
           try:
@@ -349,8 +459,8 @@ def run_cron_update():
                     f"<b>Parite:</b> {meta['display']}\n"
                     f"<b>Fiyat:</b> {formatted_price}\n"
                     f"<b>Squeeze Oranı:</b> %{bb_w*100:.2f}\n"
-                    f"<b>15dk Balina Delta (Eşik ${threshold/1000:.0f}K):</b>"
-                    f" {whale_delta_str}\n"
+                    f"<b>15dk Balina Tahta Delta:</b> {whale_delta_str}\n"
+                    f"<b>On-Chain Akış:</b> {onchain_info}\n"
                     f"<b>Önceki Mum (C-1):</b> {c1}\n\n"
                     f"⚡ <i>Büyük patlama/kırılım yaklaşıyor!</i>"
                 )
@@ -362,8 +472,8 @@ def run_cron_update():
                     f"<b>Parite:</b> {meta['display']}\n"
                     f"<b>Fiyat:</b> {formatted_price}\n"
                     f"<b>Yapı Durumu:</b> {smc}\n"
-                    f"<b>15dk Balina Delta (Eşik ${threshold/1000:.0f}K):</b>"
-                    f" {whale_delta_str}\n"
+                    f"<b>15dk Balina Tahta Delta:</b> {whale_delta_str}\n"
+                    f"<b>On-Chain Akış:</b> {onchain_info}\n"
                     f"<b>PA Context:</b> {pa}\n\n"
                     f"🔥 <i>Tuzak hareketi sonrası dönüş fırsatı!</i>"
                 )
@@ -400,6 +510,7 @@ def run_cron_update():
               "Önceki Mum Formasyonu (C-1)": c1,
               "Son 3 Mum Yapısı (PA Context)": pa,
               "15dk Balina Hacim Delta": whale_delta_str,
+              "On-Chain Cüzdan Akışı (Whale Alert)": onchain_info,
               "Aktif Mum (C-0)": c0,
               "Volume Profile (POC)": poc,
               "CVD / Order Flow Delta": cvd,
