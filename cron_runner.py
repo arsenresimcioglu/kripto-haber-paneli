@@ -117,13 +117,12 @@ def fetch_onchain_whale_alerts():
       soup = BeautifulSoup(res.text, "html.parser")
       messages = soup.find_all("div", class_="tgme_widget_message_text")
 
-      for msg in messages[-15:]:  # Son 15 mesajı tara
+      for msg in messages[-15:]:
         text = msg.get_text(separator=" ")
 
         for sym_key, meta in SYMBOLS_MAP.items():
           tag = meta["tag"]
           if f"#{tag}" in text or f" {tag} " in text:
-            # Transfer yönü tespiti
             if "to #Binance" in text or "to #Exchange" in text:
               direction = "Borsaya Giriş (Satış Riski 🚨)"
             elif "from #Binance" in text or "from #Exchange" in text:
@@ -131,7 +130,6 @@ def fetch_onchain_whale_alerts():
             else:
               direction = "Cüzdandan Cüzdana Transfer 🔄"
 
-            # Tutar tespiti (USD)
             usd_match = re.search(r"\(([\d,]+)\s*USD\)", text)
             usd_val = usd_match.group(1) if usd_match else "Büyük Transfer"
 
