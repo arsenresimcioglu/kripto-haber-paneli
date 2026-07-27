@@ -11,19 +11,20 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx4JHGGGocczm8hpQSMU0wmWU
 TELEGRAM_TOKEN = "8844757455:AAELoord_Vd3KnxfqgE6MzI0fAXN5ik6H2E"
 TELEGRAM_CHAT_ID = "6884767698"
 
+# PARİTE BAZLI DİNAMİK BALİNA EŞİKLERİ (USD)
 SYMBOLS_MAP = {
-    "BTC_USDT": {"display": "BTC/USDT", "binance": "BTCUSDT"},
-    "ETH_USDT": {"display": "ETH/USDT", "binance": "ETHUSDT"},
-    "SOL_USDT": {"display": "SOL/USDT", "binance": "SOLUSDT"},
-    "ZEC_USDT": {"display": "ZEC/USDT", "binance": "ZECUSDT"},
-    "FET_USDT": {"display": "FET/USDT", "binance": "FETUSDT"},
-    "NEAR_USDT": {"display": "NEAR/USDT", "binance": "NEARUSDT"},
-    "ONDO_USDT": {"display": "ONDO/USDT", "binance": "ONDOUSDT"},
-    "SUI_USDT": {"display": "SUI/USDT", "binance": "SUIUSDT"},
-    "INJ_USDT": {"display": "INJ/USDT", "binance": "INJUSDT"},
-    "TAO_USDT": {"display": "TAO/USDT", "binance": "TAOUSDT"},
-    "APT_USDT": {"display": "APT/USDT", "binance": "APTUSDT"},
-    "HYPE_USDT": {"display": "HYPE/USDT", "binance": "HYPEUSDT"},
+    "BTC_USDT": {"display": "BTC/USDT", "binance": "BTCUSDT", "threshold": 500000},
+    "ETH_USDT": {"display": "ETH/USDT", "binance": "ETHUSDT", "threshold": 500000},
+    "SOL_USDT": {"display": "SOL/USDT", "binance": "SOLUSDT", "threshold": 250000},
+    "SUI_USDT": {"display": "SUI/USDT", "binance": "SUIUSDT", "threshold": 250000},
+    "ZEC_USDT": {"display": "ZEC/USDT", "binance": "ZECUSDT", "threshold": 100000},
+    "FET_USDT": {"display": "FET/USDT", "binance": "FETUSDT", "threshold": 100000},
+    "NEAR_USDT": {"display": "NEAR/USDT", "binance": "NEARUSDT", "threshold": 100000},
+    "ONDO_USDT": {"display": "ONDO/USDT", "binance": "ONDOUSDT", "threshold": 100000},
+    "INJ_USDT": {"display": "INJ/USDT", "binance": "INJUSDT", "threshold": 100000},
+    "TAO_USDT": {"display": "TAO/USDT", "binance": "TAOUSDT", "threshold": 100000},
+    "APT_USDT": {"display": "APT/USDT", "binance": "APTUSDT", "threshold": 100000},
+    "HYPE_USDT": {"display": "HYPE/USDT", "binance": "HYPEUSDT", "threshold": 100000},
 }
 
 
@@ -40,8 +41,8 @@ def send_telegram_alert(message):
     print(f"Telegram Bildirim Hatası: {e}")
 
 
-def fetch_whale_trades_15m(binance_symbol):
-  """Binance Futures aggTrades üzerinden son 15 dakikada gerçekleşen >= $500K balina emirlerini hesaplar."""
+def fetch_whale_trades_15m(binance_symbol, threshold):
+  """Binance Futures aggTrades üzerinden son 15 dakikada gerçekleşen dinamik eşikli balina emirlerini hesaplar."""
   try:
     end_time = int(time.time() * 1000)
     start_time = end_time - (15 * 60 * 1000)  # Son 15 dakika
@@ -58,7 +59,7 @@ def fetch_whale_trades_15m(binance_symbol):
         qty = float(trade.get("q", 0))
         trade_val = price * qty
 
-        if trade_val >= 500000:  # $500,000 üzeri Balina filtresi
+        if trade_val >= threshold:  # Dinamik Eşik Filtresi
           is_buyer_maker = trade.get("m", False)
           if is_buyer_maker:
             whale_sell_usd += trade_val  # Market Satış
@@ -312,8 +313,9 @@ def run_cron_update():
             / 1_000_000
         )
 
-        # 15 DAKİKALIK BALİNA HACİM DELTASINI ÇEK ($500K+)
-        whale_delta_str = fetch_whale_trades_15m(meta["binance"])
+        # DİNAMİK EŞİKLİ BALİNA HACİM DELTASI HESABI
+        threshold = meta.get("threshold", 100000)
+        whale_delta_str = fetch_whale_trades_15m(meta["binance"], threshold)
 
         for tf_label, tf_gate in tf_map.items():
           try:
@@ -347,7 +349,8 @@ def run_cron_update():
                     f"<b>Parite:</b> {meta['display']}\n"
                     f"<b>Fiyat:</b> {formatted_price}\n"
                     f"<b>Squeeze Oranı:</b> %{bb_w*100:.2f}\n"
-                    f"<b>15dk Balina Hacim Delta:</b> {whale_delta_str}\n"
+                    f"<b>15dk Balina Delta (Eşik ${threshold/1000:.0f}K):</b>"
+                    f" {whale_delta_str}\n"
                     f"<b>Önceki Mum (C-1):</b> {c1}\n\n"
                     f"⚡ <i>Büyük patlama/kırılım yaklaşıyor!</i>"
                 )
@@ -359,7 +362,8 @@ def run_cron_update():
                     f"<b>Parite:</b> {meta['display']}\n"
                     f"<b>Fiyat:</b> {formatted_price}\n"
                     f"<b>Yapı Durumu:</b> {smc}\n"
-                    f"<b>15dk Balina Hacim Delta:</b> {whale_delta_str}\n"
+                    f"<b>15dk Balina Delta (Eşik ${threshold/1000:.0f}K):</b>"
+                    f" {whale_delta_str}\n"
                     f"<b>PA Context:</b> {pa}\n\n"
                     f"🔥 <i>Tuzak hareketi sonrası dönüş fırsatı!</i>"
                 )
@@ -395,7 +399,7 @@ def run_cron_update():
               "SMC & Yapı Analizi": smc,
               "Önceki Mum Formasyonu (C-1)": c1,
               "Son 3 Mum Yapısı (PA Context)": pa,
-              "15dk Balina Hacim Delta ($500K+)": whale_delta_str,
+              "15dk Balina Hacim Delta": whale_delta_str,
               "Aktif Mum (C-0)": c0,
               "Volume Profile (POC)": poc,
               "CVD / Order Flow Delta": cvd,
