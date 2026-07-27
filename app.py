@@ -1,6 +1,9 @@
 import datetime
 from datetime import timedelta, timezone
 import json
+import re
+import time
+from bs4 import BeautifulSoup
 import numpy as np
 import pandas as pd
 import requests
@@ -41,65 +44,175 @@ st.markdown(
 SYMBOLS_MAP = {
     "BTC_USDT": {
         "display": "BTC/USDT",
+        "binance": "BTCUSDT",
+        "threshold": 500000,
+        "tag": "BTC",
         "coinank": "btcusdt",
         "tv": "BINANCE:BTCUSDT",
     },
     "ETH_USDT": {
         "display": "ETH/USDT",
+        "binance": "ETHUSDT",
+        "threshold": 500000,
+        "tag": "ETH",
         "coinank": "ethusdt",
         "tv": "BINANCE:ETHUSDT",
     },
     "SOL_USDT": {
         "display": "SOL/USDT",
+        "binance": "SOLUSDT",
+        "threshold": 250000,
+        "tag": "SOL",
         "coinank": "solusdt",
         "tv": "BINANCE:SOLUSDT",
     },
     "ZEC_USDT": {
         "display": "ZEC/USDT",
+        "binance": "ZECUSDT",
+        "threshold": 100000,
+        "tag": "ZEC",
         "coinank": "zecusdt",
         "tv": "BINANCE:ZECUSDT",
     },
     "FET_USDT": {
         "display": "FET/USDT",
+        "binance": "FETUSDT",
+        "threshold": 100000,
+        "tag": "FET",
         "coinank": "fetusdt",
         "tv": "BINANCE:FETUSDT",
     },
     "NEAR_USDT": {
         "display": "NEAR/USDT",
+        "binance": "NEARUSDT",
+        "threshold": 100000,
+        "tag": "NEAR",
         "coinank": "nearusdt",
         "tv": "BINANCE:NEARUSDT",
     },
     "ONDO_USDT": {
         "display": "ONDO/USDT",
+        "binance": "ONDOUSDT",
+        "threshold": 100000,
+        "tag": "ONDO",
         "coinank": "ondousdt",
         "tv": "BINANCE:ONDOUSDT",
     },
     "SUI_USDT": {
         "display": "SUI/USDT",
+        "binance": "SUIUSDT",
+        "threshold": 250000,
+        "tag": "SUI",
         "coinank": "suiusdt",
         "tv": "BINANCE:SUIUSDT",
     },
     "INJ_USDT": {
         "display": "INJ/USDT",
+        "binance": "INJUSDT",
+        "threshold": 100000,
+        "tag": "INJ",
         "coinank": "injusdt",
         "tv": "BINANCE:INJUSDT",
     },
     "TAO_USDT": {
         "display": "TAO/USDT",
+        "binance": "TAOUSDT",
+        "threshold": 100000,
+        "tag": "TAO",
         "coinank": "taousdt",
         "tv": "BINANCE:TAOUSDT",
     },
     "APT_USDT": {
         "display": "APT/USDT",
+        "binance": "APTUSDT",
+        "threshold": 100000,
+        "tag": "APT",
         "coinank": "aptusdt",
         "tv": "BINANCE:APTUSDT",
     },
     "HYPE_USDT": {
         "display": "HYPE/USDT",
+        "binance": "HYPEUSDT",
+        "threshold": 100000,
+        "tag": "HYPE",
         "coinank": "hypeusdt",
         "tv": "BINANCE:HYPEUSDT",
     },
 }
+
+
+def fetch_onchain_whale_alerts():
+  """@whale_alert Telegram kanalını web preview üzerinden tarayıp coin bazlı on-chain akışını çıkarır."""
+  onchain_data = {}
+  try:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+    }
+    res = requests.get("https://t.me/s/whale_alert", headers=headers, timeout=6)
+    if res.status_code == 200:
+      soup = BeautifulSoup(res.text, "html.parser")
+      messages = soup.find_all("div", class_="tgme_widget_message_text")
+
+      for msg in messages[-15:]:
+        text = msg.get_text(separator=" ")
+
+        for sym_key, meta in SYMBOLS_MAP.items():
+          tag = meta.get("tag", "")
+          if tag and (f"#{tag}" in text or f" {tag} " in text):
+            if "to #Binance" in text or "to #Exchange" in text:
+              direction = "Borsaya Giriş (Satış Riski 🚨)"
+            elif "from #Binance" in text or "from #Exchange" in text:
+              direction = "Soğuk Cüzdana Çıkış (Toplama 🛡️)"
+            else:
+              direction = "Cüzdandan Cüzdana Transfer 🔄"
+
+            usd_match = re.search(r"\(([\d,]+)\s*USD\)", text)
+            usd_val = usd_match.group(1) if usd_match else "Büyük Transfer"
+
+            summary = f"{direction} [${usd_val}]"
+            onchain_data[meta["display"]] = summary
+  except Exception as e:
+    print(f"On-Chain Scraping Hatası: {e}")
+
+  return onchain_data
+
+
+def fetch_whale_trades_15m(binance_symbol, threshold):
+  """Binance Futures aggTrades üzerinden son 15 dakikada gerçekleşen dinamik eşikli balina emirlerini hesaplar."""
+  try:
+    end_time = int(time.time() * 1000)
+    start_time = end_time - (15 * 60 * 1000)
+
+    url = f"https://fapi.binance.com/fapi/v1/aggTrades?symbol={binance_symbol}&startTime={start_time}&endTime={end_time}&limit=1000"
+    res = requests.get(url, timeout=5).json()
+
+    whale_buy_usd = 0.0
+    whale_sell_usd = 0.0
+
+    if isinstance(res, list):
+      for trade in res:
+        price = float(trade.get("p", 0))
+        qty = float(trade.get("q", 0))
+        trade_val = price * qty
+
+        if trade_val >= threshold:
+          is_buyer_maker = trade.get("m", False)
+          if is_buyer_maker:
+            whale_sell_usd += trade_val
+          else:
+            whale_buy_usd += trade_val
+
+    net_whale = whale_buy_usd - whale_sell_usd
+    if net_whale > 0:
+      return f"+${net_whale/1_000_000:.2f}M (Net Alım 🟢)"
+    elif net_whale < 0:
+      return f"-${abs(net_whale)/1_000_000:.2f}M (Net Satım 🔴)"
+    else:
+      return "$0.00M (Sakin ⚖️)"
+  except Exception:
+    return "$0.00M (Nötr)"
 
 
 @st.cache_data(ttl=60)
@@ -471,6 +584,9 @@ def fetch_multi_timeframe_matrix():
   ns = fetch_news_sentiment_matrix()
   tf_map = {"15dk": "15m", "1s": "1h", "4s": "4h", "1D": "1d"}
 
+  # ON-CHAIN ZİNCİR ÜSTÜ AKIŞI ÇEK
+  onchain_map = fetch_onchain_whale_alerts()
+
   try:
     tickers_url = "https://api.gateio.ws/api/v4/futures/usdt/tickers"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -488,6 +604,14 @@ def fetch_multi_timeframe_matrix():
             item.get("volume_24h_settle", item.get("volume_24h_quote", 0))
         )
         volume_usd = raw_vol / 1_000_000
+
+        # DİNAMİK TAHTA BALİNA DELTASI VE ON-CHAIN BİLGİSİ
+        binance_symbol = meta.get("binance", "BTCUSDT")
+        threshold = meta.get("threshold", 100000)
+        whale_delta_str = fetch_whale_trades_15m(binance_symbol, threshold)
+        onchain_info = onchain_map.get(
+            meta["display"], "Aktivite Yok / Sakin ⚖️"
+        )
 
         for tf_label, tf_gate in tf_map.items():
           try:
@@ -551,6 +675,8 @@ def fetch_multi_timeframe_matrix():
               "SMC & Yapı Analizi": smc,
               "Önceki Mum Formasyonu (C-1)": candle_c1,
               "Son 3 Mum Yapısı (PA Context)": pa_ctx,
+              "15dk Balina Hacim Delta": whale_delta_str,
+              "On-Chain Cüzdan Akışı (Whale Alert)": onchain_info,
               "Aktif Mum (C-0)": candle_c0,
               "Volume Profile (POC)": poc,
               "CVD / Order Flow Delta": cvd,
