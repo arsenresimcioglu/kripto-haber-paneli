@@ -5,7 +5,10 @@ import numpy as np
 import pandas as pd
 import requests
 
+# CONFIGURE WEBHOOK & TELEGRAM
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx4JHGGGocczm8hpQSMU0wmWUbfiIctOmV4M825YNnjo9cGsnwKjEwcUMmyo7PVO6RK7Q/exec"
+TELEGRAM_TOKEN = "8844757455:AAELoord_Vd3KnxfqgE6MzI0fAXN5ik6H2E"
+TELEGRAM_CHAT_ID = "6884767698"
 
 SYMBOLS_MAP = {
     "BTC_USDT": {"display": "BTC/USDT"},
@@ -21,6 +24,19 @@ SYMBOLS_MAP = {
     "APT_USDT": {"display": "APT/USDT"},
     "HYPE_USDT": {"display": "HYPE/USDT"},
 }
+
+
+def send_telegram_alert(message):
+  try:
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML",
+    }
+    requests.post(url, json=payload, timeout=5)
+  except Exception as e:
+    print(f"Telegram Bildirim Hatası: {e}")
 
 
 def fetch_macro_indicators():
@@ -67,6 +83,7 @@ def calculate_advanced_indicators(klines_data, current_price):
         "Nötr",
         "Normal Volatilite",
         "$0.00",
+        0.0,
     )
 
   closes, highs, lows, opens, volumes = [], [], [], [], []
@@ -168,6 +185,10 @@ def calculate_advanced_indicators(klines_data, current_price):
     smc = "BOS Yapıldı (Yükseliş Trend Kırılımı 🚀)"
   elif last_c < low_min:
     smc = "CHoCH Kırılımı (Düşüş Trend Kırılımı 🔻)"
+  elif last_h >= high_max * 0.999 and last_c < high_max:
+    smc = "Tepe Likidite Temizliği (Sweep ⚡)"
+  elif last_l <= low_min * 1.001 and last_c > low_min:
+    smc = "Dip Likidite Temizliği (Sweep 🛡️)"
   else:
     smc = "Sıkışma / Akümülasyon Bölgesi ⚖️"
 
@@ -225,6 +246,7 @@ def calculate_advanced_indicators(klines_data, current_price):
       stoch_status,
       bb_status,
       poc_val,
+      bb_width,
   )
 
 
@@ -270,7 +292,39 @@ def run_cron_update():
                 stoch,
                 bb,
                 poc_val,
+                bb_w,
             ) = calculate_advanced_indicators(k_res, price)
+
+            # TELEGRAM SİNYAL KONTROLÜ (Sadece 15dk zaman diliminde)
+            if tf_label == "15dk":
+              formatted_price = (
+                  f"${price:,.2f}" if price >= 1 else f"${price:.4f}"
+              )
+
+              # 1. Squeeze Bildirimi (%0.7 ve altı)
+              if bb_w <= 0.007:
+                alert_msg = (
+                    f"⚠️ <b>VOLATİLİTE SIKIŞMASI (SQUEEZE)</b>\n\n"
+                    f"<b>Parite:</b> {meta['display']}\n"
+                    f"<b>Fiyat:</b> {formatted_price}\n"
+                    f"<b>Squeeze Oranı:</b> %{bb_w*100:.2f}\n"
+                    f"<b>Önceki Mum (C-1):</b> {c1}\n\n"
+                    f"⚡ <i>Büyük patlama/kırılım yaklaşıyor!</i>"
+                )
+                send_telegram_alert(alert_msg)
+
+              # 2. Likidite Temizliği (Sweep) Bildirimi
+              if "Sweep" in smc:
+                alert_msg = (
+                    f"🛡️ <b>LİKİDİTE TEMİZLİĞİ (SWEEP) DETECTED</b>\n\n"
+                    f"<b>Parite:</b> {meta['display']}\n"
+                    f"<b>Fiyat:</b> {formatted_price}\n"
+                    f"<b>Yapı Durumu:</b> {smc}\n"
+                    f"<b>PA Context:</b> {pa}\n\n"
+                    f"🔥 <i>Tuzak hareketi sonrası dönüş fırsatı!</i>"
+                )
+                send_telegram_alert(alert_msg)
+
           except Exception:
             smc, c0, c1, pa, poc, cvd, stoch, bb, poc_val = (
                 "Sıkışma",
