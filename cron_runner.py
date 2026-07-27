@@ -1,0 +1,341 @@
+import datetime
+from datetime import timedelta, timezone
+import json
+import numpy as np
+import pandas as pd
+import requests
+
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx4JHGGGocczm8hpQSMU0wmWUbfiIctOmV4M825YNnjo9cGsnwKjEwcUMmyo7PVO6RK7Q/exec"
+
+SYMBOLS_MAP = {
+    "BTC_USDT": {"display": "BTC/USDT"},
+    "ETH_USDT": {"display": "ETH/USDT"},
+    "SOL_USDT": {"display": "SOL/USDT"},
+    "ZEC_USDT": {"display": "ZEC/USDT"},
+    "FET_USDT": {"display": "FET/USDT"},
+    "NEAR_USDT": {"display": "NEAR/USDT"},
+    "ONDO_USDT": {"display": "ONDO/USDT"},
+    "SUI_USDT": {"display": "SUI/USDT"},
+    "INJ_USDT": {"display": "INJ/USDT"},
+    "TAO_USDT": {"display": "TAO/USDT"},
+    "APT_USDT": {"display": "APT/USDT"},
+    "HYPE_USDT": {"display": "HYPE/USDT"},
+}
+
+
+def fetch_macro_indicators():
+  fng_val, fng_class = "26", "Fear"
+  try:
+    res = requests.get("https://api.alternative.me/fng/", timeout=4).json()
+    if res.get("data"):
+      fng_val = res["data"][0]["value"]
+      fng_class = res["data"][0]["value_classification"]
+  except Exception:
+    pass
+  return fng_val, fng_class, "58.7%"
+
+
+def detect_single_candle_pattern(o, c, h, l):
+  body = abs(c - o)
+  rng = h - l if h > l else 1e-9
+  upper_wick = h - max(c, o)
+  lower_wick = min(c, o) - l
+  if body > rng * 0.7:
+    return "Güçlü Marubozu 🚀" if c > o else "Güçlü Marubozu 🔻"
+  elif upper_wick > body * 2:
+    return "Düşüş Pinbar (Upper Rejection) ⚡"
+  elif lower_wick > body * 2:
+    return "Yükseliş Pinbar (Hammer) 🛡️"
+  elif body < rng * 0.15:
+    return "Doji / Kararsız Mum ⚖️"
+  elif c > o:
+    return "Boğa Mumu 🟢"
+  else:
+    return "Ayı Mumu 🔴"
+
+
+def calculate_advanced_indicators(klines_data, current_price):
+  if not klines_data or len(klines_data) < 10:
+    return (
+        "Sıkışma Bölgesi ⚖️",
+        "Normal Mum",
+        "Doji ⚖️",
+        "Nötr ⚖️",
+        {"sl": "$0.00", "g_pocket": "$0.00", "tp1": "$0.00", "tp2": "$0.00"},
+        "Nötr POC",
+        "Dengeli Delta",
+        "Nötr",
+        "Normal Volatilite",
+        "$0.00",
+    )
+
+  closes, highs, lows, opens, volumes = [], [], [], [], []
+  for k in klines_data:
+    if isinstance(k, dict):
+      closes.append(float(k.get("c", 0)))
+      highs.append(float(k.get("h", 0)))
+      lows.append(float(k.get("l", 0)))
+      opens.append(float(k.get("o", 0)))
+      volumes.append(float(k.get("v", 0)))
+    elif isinstance(k, list):
+      closes.append(float(k[2]))
+      highs.append(float(k[3]))
+      lows.append(float(k[4]))
+      opens.append(float(k[5]))
+      volumes.append(float(k[1]))
+
+  closes, highs, lows, opens, volumes = (
+      np.array(closes),
+      np.array(highs),
+      np.array(lows),
+      np.array(opens),
+      np.array(volumes),
+  )
+
+  last_c, last_o, last_h, last_l = closes[-1], opens[-1], highs[-1], lows[-1]
+  prev_c, prev_o, prev_h, prev_l = closes[-2], opens[-2], highs[-2], lows[-2]
+
+  body_0 = abs(last_c - last_o)
+  rng_0 = last_h - last_l if last_h > last_l else 1e-9
+  if (
+      last_c > last_o
+      and prev_c < prev_o
+      and last_c > prev_o
+      and body_0 > rng_0 * 0.5
+  ):
+    candle_pattern_c0 = "Boğa Yutan (Bullish Engulfing) 🟢"
+  elif (
+      last_c < last_o
+      and prev_c > prev_o
+      and last_c < prev_o
+      and body_0 > rng_0 * 0.5
+  ):
+    candle_pattern_c0 = "Ayı Yutan (Bearish Engulfing) 🔴"
+  else:
+    candle_pattern_c0 = detect_single_candle_pattern(
+        last_o, last_c, last_h, last_l
+    )
+
+  c1_prev2_c, c1_prev2_o = closes[-3], opens[-3]
+  body_1 = abs(prev_c - prev_o)
+  rng_1 = prev_h - prev_l if prev_h > prev_l else 1e-9
+  if (
+      prev_c > prev_o
+      and c1_prev2_c < c1_prev2_o
+      and prev_c > c1_prev2_o
+      and body_1 > rng_1 * 0.5
+  ):
+    c1_candle_pattern = "Boğa Yutan (Bullish Engulfing) 🟢"
+  elif (
+      prev_c < prev_o
+      and c1_prev2_c > c1_prev2_o
+      and prev_c < c1_prev2_o
+      and body_1 > rng_1 * 0.5
+  ):
+    c1_candle_pattern = "Ayı Yutan (Bearish Engulfing) 🔴"
+  else:
+    c1_candle_pattern = detect_single_candle_pattern(
+        prev_o, prev_c, prev_h, prev_l
+    )
+
+  c3_range = np.max(highs[-4:-1]) - np.min(lows[-4:-1])
+  if closes[-2] > np.max(highs[-5:-2]):
+    pa_context = "Kırılım Gerçekleşti 🚀"
+  elif closes[-2] > np.max(highs[-5:-2]) and last_l <= np.max(highs[-5:-2]):
+    pa_context = "Kırılım ➔ Re-Test Onayı ⚡"
+  elif (highs[-2] > np.max(highs[-5:-2])) and closes[-2] < np.max(highs[-5:-2]):
+    pa_context = "Reddetme / FVG Tepkisi 🔻"
+  elif c3_range < current_price * 0.008:
+    pa_context = "Sıkışma / Daralma ⚠️"
+  else:
+    pa_context = "Nötr Akümülasyon ⚖️"
+
+  swing_high, swing_low = np.max(highs), np.min(lows)
+  fibo_range = (
+      swing_high - swing_low if swing_high > swing_low else current_price * 0.01
+  )
+  fibo_0618 = swing_low + (fibo_range * 0.618)
+  fmt = lambda val: f"${val:,.2f}" if current_price >= 1 else f"${val:.4f}"
+  fibo_dict = {
+      "sl": fmt(swing_low),
+      "g_pocket": fmt(fibo_0618),
+      "tp1": fmt(swing_high),
+      "tp2": fmt(swing_high + (fibo_range * 0.272)),
+  }
+
+  high_max, low_min = np.max(highs[:-1]), np.min(lows[:-1])
+  if last_c > high_max:
+    smc = "BOS Yapıldı (Yükseliş Trend Kırılımı 🚀)"
+  elif last_c < low_min:
+    smc = "CHoCH Kırılımı (Düşüş Trend Kırılımı 🔻)"
+  else:
+    smc = "Sıkışma / Akümülasyon Bölgesi ⚖️"
+
+  price_min, price_max = np.min(lows), np.max(highs)
+  poc_val = "$0.00"
+  if price_max > price_min:
+    bins = np.linspace(price_min, price_max, 10)
+    digitized = np.digitize(closes, bins)
+    vol_per_bin = [volumes[digitized == i].sum() for i in range(1, len(bins))]
+    poc_price = (bins[np.argmax(vol_per_bin)] + bins[np.argmax(vol_per_bin) + 1]) / 2
+    poc_val = fmt(poc_price)
+    poc_status = (
+        f"POC Üstünde ({poc_val})"
+        if current_price >= poc_price
+        else f"POC Altında ({poc_val})"
+    )
+  else:
+    poc_status = "Nötr POC"
+
+  deltas = (
+      volumes
+      * ((closes - lows) - (highs - closes))
+      / (highs - lows + 1e-9)
+  )
+  cvd_recent = np.sum(deltas[-5:])
+  cvd_status = (
+      "Net Alıcı Delta (CVD+ 🔥)"
+      if cvd_recent > 0
+      else "Net Satıcı Delta (CVD- ❄️)"
+  )
+
+  l14, h14 = np.min(lows[-14:]), np.max(highs[-14:])
+  stoch_status = (
+      f"Aşırı Alım (%{100*(closes[-1]-l14)/(h14-l14):.0f})"
+      if h14 > l14 and (100 * (closes[-1] - l14) / (h14 - l14)) >= 80
+      else "Nötr"
+  )
+
+  sma20 = np.mean(closes[-20:])
+  bb_width = (4 * np.std(closes[-20:])) / sma20 if sma20 > 0 else 0
+  bb_status = (
+      f"Bant Sıkışması (%{bb_width*100:.1f} ⚠️)"
+      if bb_width < 0.025
+      else "Normal Volatilite"
+  )
+
+  return (
+      smc,
+      candle_pattern_c0,
+      c1_candle_pattern,
+      pa_context,
+      fibo_dict,
+      poc_status,
+      cvd_status,
+      stoch_status,
+      bb_status,
+      poc_val,
+  )
+
+
+def run_cron_update():
+  matrix_data = []
+  trt_tz = timezone(timedelta(hours=3))
+  now_str = datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
+  fng_val, fng_class, btc_dom = fetch_macro_indicators()
+  tf_map = {"15dk": "15m", "1s": "1h", "4s": "4h", "1D": "1d"}
+
+  try:
+    res = requests.get(
+        "https://api.gateio.ws/api/v4/futures/usdt/tickers", timeout=10
+    ).json()
+    ticker_dict = {item["contract"]: item for item in res if "contract" in item}
+
+    for gate_symbol, meta in SYMBOLS_MAP.items():
+      if gate_symbol in ticker_dict:
+        item = ticker_dict[gate_symbol]
+        price = float(item.get("last", 0))
+        price_change = float(item.get("change_percentage", 0))
+        total_size = float(item.get("total_size", 0))
+        oi_usd = (total_size * price) / 1_000_000
+        vol_usd = (
+            float(item.get("volume_24h_settle", item.get("volume_24h_quote", 0)))
+            / 1_000_000
+        )
+
+        for tf_label, tf_gate in tf_map.items():
+          try:
+            k_res = requests.get(
+                f"https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract={gate_symbol}&interval={tf_gate}&limit=30",
+                timeout=5,
+            ).json()
+            (
+                smc,
+                c0,
+                c1,
+                pa,
+                fibo,
+                poc,
+                cvd,
+                stoch,
+                bb,
+                poc_val,
+            ) = calculate_advanced_indicators(k_res, price)
+          except Exception:
+            smc, c0, c1, pa, poc, cvd, stoch, bb, poc_val = (
+                "Sıkışma",
+                "Normal",
+                "Doji",
+                "Nötr",
+                "Nötr",
+                "Nötr",
+                "Nötr",
+                "Normal",
+                "$0.00",
+            )
+            fibo = {
+                "sl": "$0.00",
+                "g_pocket": "$0.00",
+                "tp1": "$0.00",
+                "tp2": "$0.00",
+            }
+
+          matrix_data.append({
+              "Son Güncelleme": now_str,
+              "Parite": meta["display"],
+              "Zaman Dilimi": tf_label,
+              "Fiyat ($)": f"${price:,.2f}" if price >= 1 else f"${price:.4f}",
+              "24s Değişim": (
+                  f"{'▲' if price_change >= 0 else '▼'} %{price_change:.2f}"
+              ),
+              "SMC & Yapı Analizi": smc,
+              "Önceki Mum Formasyonu (C-1)": c1,
+              "Son 3 Mum Yapısı (PA Context)": pa,
+              "Aktif Mum (C-0)": c0,
+              "Volume Profile (POC)": poc,
+              "CVD / Order Flow Delta": cvd,
+              "Bollinger Volatilite (BB)": bb,
+              "Stokastik Momentum": stoch,
+              "Fibo SL / Dip": fibo["sl"],
+              "Fibo Golden Pocket (0.618)": fibo["g_pocket"],
+              "Fibo TP1 Hedefi": fibo["tp1"],
+              "Fibo TP2 Hedefi": fibo["tp2"],
+              "Kontrat / Hacim": (
+                  f"{total_size:,.0f} Kontrat"
+                  if tf_label in ["15dk", "1s"]
+                  else f"${vol_usd:,.1f}M Hacim"
+              ),
+              "Açık Pozisyon (OI)": f"${oi_usd:,.1f}M",
+              "Korku Endeksi": f"{fng_val} ({fng_class})",
+              "BTC Dominansı": btc_dom,
+              "Haber Yönü (4s)": "Bullish 🟢",
+              "Haber Yönü (12s)": "Nötr-Bearish ⚖️",
+              "Haber Yönü (1D)": "Bullish 🟢",
+          })
+  except Exception as e:
+    print(f"Hata: {e}")
+
+  if matrix_data:
+    df = pd.DataFrame(matrix_data)
+    payload = [list(df.columns)] + df.values.tolist()
+    res = requests.post(
+        WEBHOOK_URL,
+        data=json.dumps(payload),
+        headers={"Content-Type": "text/plain;charset=utf-8"},
+        timeout=12,
+    )
+    print("Google Sheets Yanıtı:", res.status_code)
+
+
+if __name__ == "__main__":
+  run_cron_update()
