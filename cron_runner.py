@@ -1,4 +1,4 @@
-import datetime
+import datetime, os
 from datetime import timedelta, timezone
 import json
 import re
@@ -8,10 +8,11 @@ import numpy as np
 import pandas as pd
 import requests
 
-# CONFIGURE WEBHOOK & TELEGRAM
+# CONFIGURE WEBHOOK, TELEGRAM & GEMINI API
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx4JHGGGocczm8hpQSMU0wmWUbfiIctOmV4M825YNnjo9cGsnwKjEwcUMmyo7PVO6RK7Q/exec"
 TELEGRAM_TOKEN = "8844757455:AAELoord_Vd3KnxfqgE6MzI0fAXN5ik6H2E"
 TELEGRAM_CHAT_ID = "6884767698"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # PARİTE BAZLI DİNAMİK BALİNA EŞİKLERİ (USD)
 SYMBOLS_MAP = {
@@ -187,6 +188,127 @@ def fetch_macro_indicators():
   except Exception:
     pass
   return fng_val, fng_class, "58.7%"
+
+
+def analyze_news_with_gemini(title, summary):
+  """Gemini AI API kullanarak haberi 1-2 cümleyle analiz eder ve kategorize eder."""
+  if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("YOUR_"):
+    return "Analiz Yapılamadı", "Kripto"
+
+  url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+  prompt = (
+      "Aşağıdaki finans/kripto haberini Türkçe olarak 1-2 cümlelik kısa bir"
+      " piyasa etkisi özeti ile analiz et. Kategorisini de 'Kripto' veya 'Makro'"
+      f" olarak belirle.\n\nHaber Başlığı: {title}\nHaber Özeti:"
+      f" {summary}\n\nYanıtını SADECE şu geçerli JSON formatında ver, başka"
+      ' hiçbir açıklama yazma:\n{"etki": "buraya 1-2 cümlelik analiz",'
+      ' "kategori": "Kripto veya Makro"}'
+  )
+
+  payload = {"contents": [{"parts": [{"text": prompt}]}]}
+  headers = {"Content-Type": "application/json"}
+
+  try:
+    res = requests.post(url, json=payload, headers=headers, timeout=10)
+    if res.status_code == 200:
+      data = res.json()
+      text_resp = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+      text_resp = re.sub(r"```json|```", "", text_resp).strip()
+      parsed = json.loads(text_resp)
+      return parsed.get("etki", "Detay Belirtilmedi"), parsed.get(
+          "kategori", "Kripto"
+      )
+    elif res.status_code == 429:
+      print("Gemini API Hız Limitine Takıldı (429). 5sn bekleniyor...")
+      time.sleep(5)
+  except Exception as e:
+    print(f"Gemini API Analiz Hatası: {e}")
+
+  return "Piyasa Takibinde", "Kripto"
+
+
+def fetch_and_process_rss_news():
+  """RSS kaynaklarından haberleri çeker, Gemini ile analiz eder ve Google Sheets'e gönderir."""
+  rss_urls = [
+      ("CoinTelegraph", "https://cointelegraph.com/rss"),
+      ("Investing.com", "https://www.investing.com/rss/news_14.rss"),
+  ]
+
+  headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+  news_list = []
+  trt_tz = timezone(timedelta(hours=3))
+
+  for source_name, url in rss_urls:
+    try:
+      res = requests.get(url, headers=headers, timeout=8)
+      if res.status_code == 200:
+        soup = BeautifulSoup(res.text, "xml")
+        if not soup.find("item"):
+          soup = BeautifulSoup(res.text, "html.parser")
+
+        items = soup.find_all("item")[:4]
+        for item in items:
+          title = (
+              item.find("title").get_text(strip=True)
+              if item.find("title")
+              else ""
+          )
+          pub_date = (
+              item.find("pubDate").get_text(strip=True)
+              if item.find("pubDate")
+              else datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
+          )
+          desc = (
+              item.find("description").get_text(strip=True)
+              if item.find("description")
+              else title
+          )
+
+          clean_desc = BeautifulSoup(desc, "html.parser").get_text(strip=True)
+
+          if title:
+            news_list.append({
+                "title": title,
+                "date": pub_date[:25],
+                "desc": clean_desc[:300],
+            })
+    except Exception as e:
+      print(f"RSS Çekme Hatası ({source_name}): {e}")
+
+  if not news_list:
+    print("İşlenecek yeni haber bulunamadı.")
+    return
+
+  print(f"Haberler Taranıyor ({len(news_list)} adet)...")
+
+  formatted_rows = []
+  for news in news_list[:5]:
+    etki, kategori = analyze_news_with_gemini(news["title"], news["desc"])
+    formatted_rows.append([news["title"], news["date"], etki, kategori])
+    time.sleep(3)  # Gemini 429 Koruması
+
+  if formatted_rows:
+    news_payload = {
+        "type": "news",
+        "sheet": "Haberler",
+        "headers": [
+            "Olay / Haber Başlığı",
+            "Tarih / Saat",
+            "Beklenti / Etki",
+            "Kategori (Makro/Kripto)",
+        ],
+        "data": formatted_rows,
+    }
+    try:
+      res = requests.post(
+          WEBHOOK_URL,
+          data=json.dumps(news_payload),
+          headers={"Content-Type": "text/plain;charset=utf-8"},
+          timeout=12,
+      )
+      print("Haberler Google Sheets Haberler Sekmesine Gönderildi:", res.status_code)
+    except Exception as e:
+      print("Haber Webhook Aktarım Hatası:", e)
 
 
 def detect_single_candle_pattern(o, c, h, l):
@@ -416,11 +538,9 @@ def run_cron_update():
             / 1_000_000
         )
 
-        # DİNAMİK EŞİKLİ TAHTA BALİNA DELTASI
         threshold = meta.get("threshold", 100000)
         whale_delta_str = fetch_whale_trades_15m(meta["binance"], threshold)
 
-        # ON-CHAIN BİLGİSİ
         onchain_info = onchain_map.get(
             meta["display"], "Aktivite Yok / Sakin ⚖️"
         )
@@ -445,7 +565,6 @@ def run_cron_update():
                 bb_w,
             ) = calculate_advanced_indicators(k_res, price)
 
-            # TELEGRAM SİNYAL KONTROLÜ
             if tf_label == "15dk":
               formatted_price = (
                   f"${price:,.2f}" if price >= 1 else f"${price:.4f}"
@@ -542,7 +661,10 @@ def run_cron_update():
         headers={"Content-Type": "text/plain;charset=utf-8"},
         timeout=12,
     )
-    print("Google Sheets Yanıtı:", res.status_code)
+    print("Google Sheets Matris Yanıtı:", res.status_code)
+
+  # HABER ÇEKME VE GEMINI ANALİZ SÜRECİNİ BAŞLAT
+  fetch_and_process_rss_news()
 
 
 if __name__ == "__main__":
