@@ -194,44 +194,48 @@ def fetch_macro_indicators():
 
 
 def analyze_news_with_gemini(title, summary):
-  """Gemini AI API kullanarak haberi 1-2 cümleyle analiz eder ve kategorize eder."""
+  """Gemini AI API kullanarak haberi net bir piyasa etkisi ve yönüyle analiz eder."""
   if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("YOUR_"):
-    return "Analiz Yapılamadı", "Kripto"
+    return "Nötr ⚖️ (API Anahtarı Eksik)", "Kripto"
 
   url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
   prompt = (
-      "Aşağıdaki finans/kripto haberini Türkçe olarak 1-2 cümlelik kısa bir"
-      " piyasa etkisi özeti ile analiz et. Kategorisini de 'Kripto' veya 'Makro'"
-      f" olarak belirle.\n\nHaber Başlığı: {title}\nHaber Özeti:"
-      f" {summary}\n\nYanıtını SADECE şu geçerli JSON formatında ver, başka"
-      ' hiçbir açıklama yazma:\n{"etki": "buraya 1-2 cümlelik analiz",'
-      ' "kategori": "Kripto veya Makro"}'
+      "Aşağıdaki finans/kripto haberini Türkçe olarak analiz et. "
+      "Piyasa etkisini net bir yönle (Bullish 🟢, Bearish 🔴 veya Nötr ⚖️) "
+      "başlatarak 1-2 cümlelik kısa bir özet çıkar. Kategorisini de 'Kripto' veya 'Makro' olarak belirle.\n\n"
+      f"Haber Başlığı: {title}\n"
+      f"Haber Özeti: {summary}\n\n"
+      "Yanıtını SADECE şu geçerli JSON formatında ver, başka hiçbir açıklama yazma:\n"
+      '{"etki": "Bullish 🟢 / Bearish 🔴 / Nötr ⚖️ ile başlayan 1-2 cümlelik analiz", "kategori": "Kripto veya Makro"}'
   )
 
   payload = {"contents": [{"parts": [{"text": prompt}]}]}
   headers = {"Content-Type": "application/json"}
 
   try:
-    res = requests.post(url, json=payload, headers=headers, timeout=10)
+    res = requests.post(url, json=payload, headers=headers, timeout=15)
     if res.status_code == 200:
       data = res.json()
       text_resp = data["candidates"][0]["content"]["parts"][0]["text"].strip()
       text_resp = re.sub(r"```json|```", "", text_resp).strip()
       parsed = json.loads(text_resp)
-      return parsed.get("etki", "Detay Belirtilmedi"), parsed.get(
-          "kategori", "Kripto"
-      )
+      
+      etki_val = parsed.get("etki", "Nötr ⚖️ (Analiz Detayı Yok)")
+      kategori_val = parsed.get("kategori", "Kripto")
+      return etki_val, kategori_val
+      
     elif res.status_code == 429:
       print("Gemini API Hız Limitine Takıldı (429). 5sn bekleniyor...")
       time.sleep(5)
   except Exception as e:
     print(f"Gemini API Analiz Hatası: {e}")
 
-  return "Piyasa Takibinde", "Kripto"
+  # HATA / KESİNTİ DURUMUNDA TRADE MANTIĞINI BOZMAYACAK GÜVENLİ VARSAYILAN
+  return "Nötr ⚖️ (AI Bağlantı Beklemede)", "Kripto"
 
 
 def fetch_and_process_rss_news():
-  """RSS kaynaklarından haberleri çeker, Gemini ile analiz eder ve Google Sheets'e gönderir."""
+  """RSS kaynaklarından haberleri, orijinal linkleriyle çeker, Gemini ile analiz eder ve Google Sheets'e gönderir."""
   rss_urls = [
       ("CoinTelegraph", "https://cointelegraph.com/rss"),
       ("Investing.com", "https://www.investing.com/rss/news_14.rss"),
@@ -262,6 +266,13 @@ def fetch_and_process_rss_news():
                 else ""
             )
 
+            link_el = item.find("link")
+            link = (
+                link_el.text.strip()
+                if link_el is not None and link_el.text
+                else ""
+            )
+
             pub_date_el = item.find("pubDate") or item.find("pubdate")
             pub_date = (
                 pub_date_el.text.strip()
@@ -285,6 +296,7 @@ def fetch_and_process_rss_news():
             if title:
               news_list.append({
                   "title": title,
+                  "link": link,
                   "date": pub_date[:25],
                   "desc": clean_desc[:300],
               })
@@ -294,6 +306,9 @@ def fetch_and_process_rss_news():
           for item in items:
             title_tag = item.find("title")
             title = title_tag.get_text(strip=True) if title_tag else ""
+
+            link_tag = item.find("link")
+            link = link_tag.get_text(strip=True) if link_tag else ""
 
             date_tag = item.find("pubdate") or item.find("pubDate")
             pub_date = (
@@ -312,6 +327,7 @@ def fetch_and_process_rss_news():
             if title:
               news_list.append({
                   "title": title,
+                  "link": link,
                   "date": pub_date[:25],
                   "desc": clean_desc[:300],
               })
@@ -327,7 +343,8 @@ def fetch_and_process_rss_news():
   formatted_rows = []
   for news in news_list[:5]:
     etki, kategori = analyze_news_with_gemini(news["title"], news["desc"])
-    formatted_rows.append([news["title"], news["date"], etki, kategori])
+    # 5 Kolon: Başlık, Link, Tarih, Etki, Kategori
+    formatted_rows.append([news["title"], news["link"], news["date"], etki, kategori])
     time.sleep(3)
 
   if formatted_rows:
@@ -336,6 +353,7 @@ def fetch_and_process_rss_news():
         "sheet": "Haberler",
         "headers": [
             "Olay / Haber Başlığı",
+            "Kaynak Linki",
             "Tarih / Saat",
             "Beklenti / Etki",
             "Kategori (Makro/Kripto)",
