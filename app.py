@@ -701,7 +701,7 @@ def fetch_multi_timeframe_matrix():
 
 
 SHEET_ID = "1FyKkIrJYKsVlH-7-d7veQrSOBH-5bC7JojeLnJMW0g"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=676116480"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&gid=676116480"
 
 
 @st.cache_data(ttl=10)
