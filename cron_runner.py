@@ -198,7 +198,7 @@ def analyze_news_with_gemini(title, summary):
   if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("YOUR_"):
     return "Nötr ⚖️ (API Anahtarı Eksik)", "Kripto"
 
-  url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+  url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
   prompt = (
       "Aşağıdaki finans/kripto haberini Türkçe olarak analiz et. "
       "Piyasa etkisini net bir yönle (Bullish 🟢, Bearish 🔴 veya Nötr ⚖️) "
