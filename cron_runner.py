@@ -214,6 +214,8 @@ def analyze_news_with_gemini(title, summary):
 
   try:
     res = requests.post(url, json=payload, headers=headers, timeout=15)
+    print(f"DEBUG - Gemini Yanıt Kodu: {res.status_code}, İçerik: {res.text[:200]}")
+    
     if res.status_code == 200:
       data = res.json()
       text_resp = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -228,7 +230,7 @@ def analyze_news_with_gemini(title, summary):
       print("Gemini API Hız Limitine Takıldı (429). 5sn bekleniyor...")
       time.sleep(5)
   except Exception as e:
-    print(f"Gemini API Analiz Hatası: {e}")
+    print(f"DEBUG - Gemini API Analiz Hatası Detayı: {e}")
 
   # HATA / KESİNTİ DURUMUNDA TRADE MANTIĞINI BOZMAYACAK GÜVENLİ VARSAYILAN
   return "Nötr ⚖️ (AI Bağlantı Beklemede)", "Kripto"
