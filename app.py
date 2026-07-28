@@ -704,10 +704,14 @@ SHEET_ID = "15oys_jSdW0q8ePdUna0BVirzTyazzsMfvJCcral7VgI"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=10)
 def load_news():
   try:
-    return pd.read_csv(CSV_URL)
+    df = pd.read_csv(CSV_URL)
+    if "Tarih / Saat" in df.columns:
+      df["Tarih / Saat"] = pd.to_datetime(df["Tarih / Saat"], errors="coerce")
+      df = df.sort_values(by="Tarih / Saat", ascending=False)
+    return df
   except Exception:
     return pd.DataFrame()
 
@@ -900,9 +904,12 @@ with tab4:
 
 with tab2:
   st.subheader("⚡ Canlı Haber & Makro Ekonomi Radarı")
-  if st.button("🔄 Akışı Yenile", key="btn_news"):
-    st.cache_data.clear()
-    st.rerun()
+  col_n1, col_n2 = st.columns([1, 4])
+  with col_n1:
+    if st.button("🔄 Akışı Yenile", key="btn_news"):
+      st.cache_data.clear()
+      st.rerun()
+
   df_news = load_news()
   if not df_news.empty:
     kategoriler = ["Tümü"] + list(
@@ -911,11 +918,15 @@ with tab2:
     kat_secimi = st.selectbox("Kategori Filtresi:", kategoriler)
     if kat_secimi != "Tümü":
       df_news = df_news[df_news["Kategori (Makro/Kripto)"] == kat_secimi]
-    for idx, row in df_news.iloc[::-1].iterrows():
-      st.markdown(
-          f"### 🌐 {row.get('Olay / Haber Başlığı', 'Başlık Yok')}"
-      )
-      st.caption(f"🕒 Tarih / Saat: {str(row.get('Tarih / Saat', ''))[:16]}")
+
+    for idx, row in df_news.iterrows():
+      title = row.get("Olay / Haber Başlığı", "Başlık Yok")
+      link = row.get("Kaynak Linki", "#")
+      tarih = str(row.get("Tarih / Saat", ""))[:16]
+
+      st.markdown(f"### 🌐 [{title}]({link})")
+      st.caption(f"🕒 Tarih / Saat: {tarih}")
+
       with st.expander("💡 AI Analizi Detayı"):
         st.write(
             f"**Beklenti / Etki:**\n{row.get('Beklenti / Etki', 'Detay Yok')}"
