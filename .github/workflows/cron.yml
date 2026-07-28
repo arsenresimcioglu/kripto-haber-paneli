@@ -24,4 +24,6 @@ jobs:
           pip install -r requirements.txt
 
       - name: Cron Runner Scriptini Çalıştır
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python cron_runner.py
