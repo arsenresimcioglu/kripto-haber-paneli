@@ -700,7 +700,7 @@ def fetch_multi_timeframe_matrix():
   return pd.DataFrame(matrix_data)
 
 
-SHEET_ID = "15oys_jSdW0q8ePdUna0BVirzTyazzsMfvJCcral7VgI"
+SHEET_ID = "1FyKkIrJYKsVlH-7-d7veQrSOBH-5bC7JojeLnJMW0g"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 
@@ -924,7 +924,10 @@ with tab2:
       link = row.get("Kaynak Linki", "#")
       tarih = str(row.get("Tarih / Saat", ""))[:16]
 
-      st.markdown(f"### 🌐 [{title}]({link})")
+      st.markdown(
+          f"### 🌐 <a href='{link}' target='_blank' style='color: #F0B90B; text-decoration: none;'>{title}</a>",
+          unsafe_allow_html=True
+      )
       st.caption(f"🕒 Tarih / Saat: {tarih}")
 
       with st.expander("💡 AI Analizi Detayı"):
