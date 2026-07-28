@@ -347,7 +347,7 @@ def fetch_and_process_rss_news():
           WEBHOOK_URL,
           data=json.dumps(news_payload),
           headers={"Content-Type": "text/plain;charset=utf-8"},
-          timeout=12,
+          timeout=30,
       )
       print(
           "Haberler Google Sheets Haberler Sekmesine Gönderildi:",
@@ -705,7 +705,7 @@ def run_cron_update():
         WEBHOOK_URL,
         data=json.dumps(payload),
         headers={"Content-Type": "text/plain;charset=utf-8"},
-        timeout=12,
+        timeout=30,
     )
     print("Google Sheets Matris Yanıtı:", res.status_code)
 
