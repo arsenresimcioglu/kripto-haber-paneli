@@ -242,9 +242,7 @@ def fetch_and_process_rss_news():
     try:
       res = requests.get(url, headers=headers, timeout=8)
       if res.status_code == 200:
-        soup = BeautifulSoup(res.text, "xml")
-        if not soup.find("item"):
-          soup = BeautifulSoup(res.text, "html.parser")
+        soup = BeautifulSoup(res.text, "html.parser")
 
         items = soup.find_all("item")[:4]
         for item in items:
