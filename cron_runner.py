@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 # CONFIGURE WEBHOOK, TELEGRAM & GEMINI API
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx4JHGGGocczm8hpQSMU0wmWUbfiIctOmV4M825YNnjo9cGsnwKjEwcUMmyo7PVO6RK7Q/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbw_VknQjfD0AoBisAUiKVZZXc5zPj6wXiQEb_Yo1aIx7H_nQnGraV_70XrVxY6O1jIfNQ/exec"
 TELEGRAM_TOKEN = "8844757455:AAELoord_Vd3KnxfqgE6MzI0fAXN5ik6H2E"
 TELEGRAM_CHAT_ID = "6884767698"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
