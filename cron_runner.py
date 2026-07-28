@@ -246,30 +246,26 @@ def fetch_and_process_rss_news():
 
         items = soup.find_all("item")[:4]
         for item in items:
-          title = (
-              item.find("title").get_text(strip=True)
-              if item.find("title")
-              else ""
-          )
-          pub_date = (
-              item.find("pubDate").get_text(strip=True)
-              if item.find("pubDate")
-              else datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
-          )
-          desc = (
-              item.find("description").get_text(strip=True)
-              if item.find("description")
-              else title
-          )
+                title_tag = item.find("title")
+                title = title_tag.get_text(strip=True) if title_tag else ""
 
-          clean_desc = BeautifulSoup(desc, "html.parser").get_text(strip=True)
+                date_tag = item.find("pubdate") or item.find("pubDate")
+                pub_date = date_tag.get_text(strip=True) if date_tag else datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
 
-          if title:
-            news_list.append({
-                "title": title,
-                "date": pub_date[:25],
-                "desc": clean_desc[:300],
-            })
+                desc = (
+                    item.find("description").get_text(strip=True)
+                    if item.find("description")
+                    else title
+                )
+
+                clean_desc = BeautifulSoup(desc, "html.parser").get_text(strip=True)
+
+                if title:
+                    news_list.append({
+                        "title": title,
+                        "date": pub_date[:25],
+                        "desc": clean_desc[:300],
+                    })
     except Exception as e:
       print(f"RSS Çekme Hatası ({source_name}): {e}")
 
