@@ -709,7 +709,9 @@ def load_news():
   try:
     df = pd.read_csv(CSV_URL)
     if "Tarih / Saat" in df.columns:
-      df["Tarih / Saat"] = pd.to_datetime(df["Tarih / Saat"], errors="coerce")
+      df["Tarih / Saat"] = pd.to_datetime(
+          df["Tarih / Saat"], dayfirst=True, errors="coerce"
+      )
       df = df.sort_values(by="Tarih / Saat", ascending=False)
     return df
   except Exception:
