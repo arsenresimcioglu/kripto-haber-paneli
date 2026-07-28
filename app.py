@@ -707,14 +707,32 @@ CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&
 @st.cache_data(ttl=10)
 def load_news():
   try:
-    df = pd.read_csv(CSV_URL)
+    res = requests.get(CSV_URL, timeout=10)
+    if res.status_code != 200:
+      st.error(
+          f"Google Sheets CSV İndirme Hatası! HTTP Kodu: {res.status_code} -"
+          " Tablonun 'Bağlantısı olan herkes görüntüleyebilir' şeklinde açık"
+          " olduğundan emin olun."
+      )
+      return pd.DataFrame()
+
+    import io
+
+    df = pd.read_csv(io.StringIO(res.text))
+
+    if df.empty:
+      st.warning("Google Sheets tablosu boş döndü.")
+      return pd.DataFrame()
+
     if "Tarih / Saat" in df.columns:
       df["Tarih / Saat"] = pd.to_datetime(
           df["Tarih / Saat"], dayfirst=True, errors="coerce"
       )
       df = df.sort_values(by="Tarih / Saat", ascending=False)
+
     return df
-  except Exception:
+  except Exception as e:
+    st.error(f"Haberler yüklenirken teknik hata oluştu: {e}")
     return pd.DataFrame()
 
 
