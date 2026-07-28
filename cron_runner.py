@@ -1,8 +1,10 @@
-import datetime, os
+import datetime
 from datetime import timedelta, timezone
 import json
+import os
 import re
 import time
+import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import numpy as np
 import pandas as pd
@@ -111,6 +113,7 @@ def fetch_onchain_whale_alerts():
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
     }
     res = requests.get("https://t.me/s/whale_alert", headers=headers, timeout=6)
@@ -234,38 +237,84 @@ def fetch_and_process_rss_news():
       ("Investing.com", "https://www.investing.com/rss/news_14.rss"),
   ]
 
-  headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      ),
+      "Accept": "application/rss+xml, application/xml, text/xml, */*",
+  }
   news_list = []
   trt_tz = timezone(timedelta(hours=3))
 
   for source_name, url in rss_urls:
     try:
-      res = requests.get(url, headers=headers, timeout=8)
+      res = requests.get(url, headers=headers, timeout=10)
       if res.status_code == 200:
-        soup = BeautifulSoup(res.text, "html.parser")
+        try:
+          root = ET.fromstring(res.content)
+          items = root.findall(".//item")[:4]
+          for item in items:
+            title_el = item.find("title")
+            title = (
+                title_el.text.strip()
+                if title_el is not None and title_el.text
+                else ""
+            )
 
-        items = soup.find_all("item")[:4]
-        for item in items:
-                title_tag = item.find("title")
-                title = title_tag.get_text(strip=True) if title_tag else ""
+            pub_date_el = item.find("pubDate") or item.find("pubdate")
+            pub_date = (
+                pub_date_el.text.strip()
+                if pub_date_el is not None and pub_date_el.text
+                else datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
+            )
 
-                date_tag = item.find("pubdate") or item.find("pubDate")
-                pub_date = date_tag.get_text(strip=True) if date_tag else datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
+            desc_el = item.find("description")
+            desc = (
+                desc_el.text.strip()
+                if desc_el is not None and desc_el.text
+                else title
+            )
 
-                desc = (
-                    item.find("description").get_text(strip=True)
-                    if item.find("description")
-                    else title
-                )
+            clean_desc = (
+                BeautifulSoup(desc, "html.parser").get_text(strip=True)
+                if desc
+                else title
+            )
 
-                clean_desc = BeautifulSoup(desc, "html.parser").get_text(strip=True)
+            if title:
+              news_list.append({
+                  "title": title,
+                  "date": pub_date[:25],
+                  "desc": clean_desc[:300],
+              })
+        except Exception:
+          soup = BeautifulSoup(res.text, "html.parser")
+          items = soup.find_all("item")[:4]
+          for item in items:
+            title_tag = item.find("title")
+            title = title_tag.get_text(strip=True) if title_tag else ""
 
-                if title:
-                    news_list.append({
-                        "title": title,
-                        "date": pub_date[:25],
-                        "desc": clean_desc[:300],
-                    })
+            date_tag = item.find("pubdate") or item.find("pubDate")
+            pub_date = (
+                date_tag.get_text(strip=True)
+                if date_tag
+                else datetime.datetime.now(trt_tz).strftime("%d.%m.%Y %H:%M")
+            )
+
+            desc_tag = item.find("description")
+            desc = desc_tag.get_text(strip=True) if desc_tag else title
+
+            clean_desc = BeautifulSoup(desc, "html.parser").get_text(
+                strip=True
+            )
+
+            if title:
+              news_list.append({
+                  "title": title,
+                  "date": pub_date[:25],
+                  "desc": clean_desc[:300],
+              })
     except Exception as e:
       print(f"RSS Çekme Hatası ({source_name}): {e}")
 
@@ -279,7 +328,7 @@ def fetch_and_process_rss_news():
   for news in news_list[:5]:
     etki, kategori = analyze_news_with_gemini(news["title"], news["desc"])
     formatted_rows.append([news["title"], news["date"], etki, kategori])
-    time.sleep(3)  # Gemini 429 Koruması
+    time.sleep(3)
 
   if formatted_rows:
     news_payload = {
@@ -300,7 +349,10 @@ def fetch_and_process_rss_news():
           headers={"Content-Type": "text/plain;charset=utf-8"},
           timeout=12,
       )
-      print("Haberler Google Sheets Haberler Sekmesine Gönderildi:", res.status_code)
+      print(
+          "Haberler Google Sheets Haberler Sekmesine Gönderildi:",
+          res.status_code,
+      )
     except Exception as e:
       print("Haber Webhook Aktarım Hatası:", e)
 
